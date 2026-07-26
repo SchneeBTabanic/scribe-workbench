@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+/tmp/
+
+# Private specimens / personal data — never publish
+scratchpad_22March2026.txt
+Chatgpt_SynOfGroknClaude_ClaudeCode_Final.txt
+ProjectNamirha_chatgpt_CommentOnVessel.txt

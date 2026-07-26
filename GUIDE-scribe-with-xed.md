@@ -1,0 +1,240 @@
+# Working between Scribe's Workbench and xed
+
+*A guide to the tool **in your hands** — not the feature list, but how Scribe fits the way
+you already work in xed. Written for the person who composes in a xed tab because a browser
+input box has eaten his thinking before, keeps fragments parked in tabs mid-flight, and has
+one long scratchpad with a hand-kept TOC and NAS notes scattered down its length.*
+
+---
+
+## First, what Scribe does and does not touch
+
+Your xed tabs are doing **three different jobs at once**. Naming them separately is the
+whole key, because Scribe touches each one differently.
+
+**Job 1 — the crash buffer.** You write long inputs in a xed tab *before* trusting them to
+a browser, because you've been burned: the frozen page, the refresh that eats an hour of
+thinking. **Scribe does nothing here, and shouldn't.** A plain xed tab saved to disk is
+already the right tool — write locally where it's safe, *then* hand it to the browser. Keep
+doing exactly this. Scribe never enters Job 1.
+
+**Job 2 — the staging place.** The tabs where you park fragments in flight: hold a passage
+between tabs, keep a block open to copy into an AI, assemble pieces. **This is what Scribe
+was built for** — but it does the job through *one pile + derived views* instead of many
+live tabs. Whether that's better *for you* is something to feel out, not take on faith. Try
+it on one real batch and see if the rhythm suits your hand.
+
+**Job 3 — the scratchpad.** The long file with the TOC at the top and the NAS blocks
+scattered down its body, kept in sync by memory and discipline. **This is the one Scribe
+genuinely dissolves.** You stop hand-keeping the TOC; you stop remembering where each paste
+went. One pile holds everything in arrival order; every other ordering is a view you summon.
+
+So: **Job 1 stays a xed tab. Job 3 becomes the pile. Job 2 is the experiment.** The tabs
+don't disappear from your life — the crash-buffer tab especially stays exactly as it is.
+
+---
+
+## One-time setup — so paths stop hurting
+
+Scribe is one Python file. It isn't "installed" anywhere on your PATH, so two small habits
+remove nearly all the terminal friction you were worried about.
+
+**1. Give it a short name.** Add this to the end of `~/.bashrc`:
+
+```bash
+alias scribe='python3 /mnt/data/ProjectNamirha_git/scribe-workbench/scribe.py'
+```
+
+Change the path to wherever your copy of `scribe.py` actually lives. Then `source ~/.bashrc`
+(or open a new terminal). Now you type `scribe`, not the long path.
+
+**2. Give the pile one fixed home, and work from there.** Pick one folder and keep the pile
+in it — for example:
+
+```bash
+mkdir -p ~/scribe
+cd ~/scribe          # do your Scribe work from here
+```
+
+Because you're *in* `~/scribe`, the pile is just `pile.txt` in every command — no long
+paths to type, nothing to get wrong. **This is the answer to "paths matter a lot in
+terminal": one home, one short filename.** When you're in `~/scribe`, every example below
+works verbatim.
+
+> If the pile doesn't exist yet, your first `capture --append pile.txt` creates it.
+
+Check the tool is alive and see its freeze fingerprint any time:
+
+```bash
+scribe doctor
+```
+
+---
+
+## The mental model — pile vs view
+
+There are exactly two kinds of file, and keeping them straight is the one thing to
+internalise:
+
+| | **The pile** (`pile.txt`) | **A view** (`nas.view`, `live.view`, …) |
+|---|---|---|
+| what it is | the **truth** — every block, in arrival order | a **disposable** filter of the pile |
+| how many | **one**, forever | as many as you like, thrown away freely |
+| do you edit it? | rarely, and carefully | **yes — this is where you work** |
+| how edits get home | — | `scribe push nas.view pile.txt` (by `#id`) |
+| lose it? | back it up; it's everything | shrug — `scribe view …` rebuilds it |
+
+The block header looks like this and is plain text you can read with Scribe switched off:
+
+```
+@@ #c98b 2026-07-07T19:48 @topic:nas @topic:zfs @state:live @source:gemini
+ZFS vs ext4: use ZFS on the NAS for checksums and snapshots.
+```
+
+`@@` starts a block; `#c98b` is its permanent id; the `@key:value` tags are what views
+filter on. Everything after the header line, until the next `@@`, is your verbatim text.
+
+---
+
+## Job 3, dissolved — moving the scratchpad into the pile
+
+You don't convert the old scratchpad in one shot (that would need your eye on every block
+boundary — Scribe won't guess where your blocks split). You do it **the same way you'll use
+it going forward: one block at a time, as you touch each topic.**
+
+Say you're looking at the NAS section of your old scratchpad in a xed tab. Select that one
+block, and get it into the pile. Two ways, depending on whether you'd rather hand Scribe a
+**file** or a **clipboard**:
+
+**A — via a file (most robust, zero extra tools).** In xed, save the fragment as its own
+little file (or just save the whole tab), then:
+
+```bash
+scribe capture zfs-note.txt --topic nas --topic zfs --state live --source gemini --append pile.txt
+```
+
+Scribe cleans it into a block, stamps the arrival time, and appends it to the pile. It
+prints something like `captured block #c98b (1 lines)` and tells you honestly whether its
+loss-auditor flagged anything — it never silently alters your words.
+
+**B — via the clipboard (fewer keystrokes once set up).** Scribe reads standard input when
+you don't give it a file, so you can pipe your clipboard straight in. This needs a tiny
+clipboard tool (one-time install on Mint/LMDE):
+
+```bash
+sudo apt install xsel        # one time only
+```
+
+Then, after selecting-and-copying the block in xed:
+
+```bash
+xsel -b | scribe capture --topic nas --topic zfs --state live --source gemini --append pile.txt
+```
+
+(`xclip -selection clipboard -o | scribe capture …` works identically if you have `xclip`
+instead.) Path B is the closest thing to "grab from xed, drop in the pile" in one motion.
+
+**Tagging is yours, and only yours.** Scribe will never guess a topic for you (that's the
+sovereignty line it won't cross). The `--topic`/`--state` flags are you telling it what the
+block *is*. A block with no topic just lives in arrival order and shows up in no topic view
+— which is fine; tag it later with `scribe tag c98b pile.txt --topic nas` when you decide.
+
+Repeat, block by block, whenever you're already touching that material. There's no
+"migration day" — the pile fills as you work.
+
+---
+
+## Job 2, the experiment — a view instead of a staging tab
+
+Here's the daily loop that replaces "keep five tabs open to hold things." Suppose you want
+to work on everything NAS-related.
+
+**1. Derive a clean view file and open it in xed:**
+
+```bash
+scribe view topic:nas pile.txt > nas.view 2>/dev/null
+xed nas.view &
+```
+
+The `> nas.view 2>/dev/null` part matters: it sends the **view** into the file and Scribe's
+chatter (`1 block(s) in view…`) to the terminal, so the file opens **clean** in xed. The
+`&` hands the terminal back to you.
+
+Now `nas.view` holds every NAS block, **gathered together**, even though in the pile they're
+scattered among router notes and git notes and philosophy. **None of them moved in the
+pile.** This is your staging tab — except you didn't have to keep it open all week; you
+summoned it in one line and you'll throw it away at the end.
+
+**2. Work in it in xed** — develop a thought, add a `NOTE-TO-SELF:` line under a block, fix a
+typo. Edit the **bodies**; leave the `@@ #id …` header lines alone (they're how edits find
+their way home). Save the file in xed as usual.
+
+**3. Push your edits home:**
+
+```bash
+scribe push nas.view pile.txt
+```
+
+Scribe matches each block by its `#id` and updates **only** those blocks in the pile —
+`pushed home: 1 block(s) updated (#c98b)`. The git block you didn't touch stays untouched.
+The thought you developed in the view is now in the canonical pile, in the right place, and
+you can delete `nas.view` without a second thought.
+
+**To hand a batch to an AI** (the "copy the staging tab into ChatGPT" move), export instead
+of view — `--bare` strips every header and back-link so there's nothing to scroll-and-delete
+on the other end:
+
+```bash
+scribe export topic:nas pile.txt --bare > for-ai.txt
+xed for-ai.txt &          # copy from here into the browser input box
+```
+
+Notice this respects **Job 1**: you're pasting *out of a local file into the browser*, the
+safe direction you already trust.
+
+---
+
+## The daily rhythm, in one glance
+
+```
+   ┌─ Job 1: still a xed tab. Compose long input here, safe from the browser. Unchanged. ─┐
+
+   capture   :  (saved fragment | xsel -b)  →  scribe capture … --append pile.txt
+   look      :  scribe toc pile.txt                 # the TOC, regenerated, never hand-kept
+   gather    :  scribe view topic:X pile.txt > X.view 2>/dev/null ; xed X.view &
+   work      :  edit bodies in xed, save
+   land      :  scribe push X.view pile.txt         # edits home by #id ; delete the view
+   hand off  :  scribe export topic:X pile.txt --bare > for-ai.txt ; xed for-ai.txt &
+```
+
+`scribe toc pile.txt` any time prints the whole table of contents from your tags — the list
+you used to hand-maintain at the top of the scratchpad, now free and always current.
+
+---
+
+## Gotchas that bite in the terminal (all real, all avoidable)
+
+- **Always redirect a view to a file with `2>/dev/null`.** Without it, Scribe's status line
+  lands in the file too and clutters what you open in xed. With it, the file is clean.
+- **Edit views, not the pile.** The pile is safe to read and safe to `push` into; but if you
+  hand-edit a block's `@@ #id …` header in the pile you can orphan it. Change tags with
+  `scribe tag <id> pile.txt --topic …` / `--remove topic:…`, not by retyping the header.
+- **A view is a snapshot.** If you derive `nas.view`, then capture new NAS blocks, the old
+  `nas.view` won't know about them — re-derive it. Views are cheap; regenerate freely.
+- **`--append` vs no `--append`.** With `--append pile.txt`, the block goes into the pile.
+  *Without* it, `capture` just prints the block to the terminal so you can eyeball it first.
+  Use the print form when you're unsure and want to check before committing it to the pile.
+- **Back up the pile; ignore the views.** The pile is the only irreplaceable file. This is
+  exactly where the restic-plain backup tool (the sibling project) earns its keep — point it
+  at `~/scribe/` and your whole thinking-pile is preserved, plainly, checksummed.
+
+---
+
+## What to actually test first
+
+Don't adopt this wholesale. Take **one** real topic out of your current scratchpad — NAS is
+the obvious one, since it's the scattered case that hurts. Capture its blocks into a fresh
+`pile.txt`, derive `topic:nas` into xed, develop one note, push it home. Then ask the only
+question that matters: *did that feel better in the hand than the five tabs did?* If yes,
+Job 2 is yours to keep. If it felt like a step sideways, keep Scribe for Job 3 (the
+scratchpad it plainly dissolves) and leave Job 2 to your tabs. Either answer is a good one.
