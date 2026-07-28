@@ -5,6 +5,7 @@
 # Each test maps to a Phase-1 gate requirement from the brief / GATE 0 rulings.
 
 import shutil
+import sys
 import unittest
 
 import scribe
@@ -317,6 +318,253 @@ class TestAtomicWrite(unittest.TestCase):
         scribe._atomic_write(path, "v2\n")
         with open(path) as fh:
             self.assertEqual(fh.read(), "v2\n")
+
+
+# ---------------------------------------------------------------------------
+# v1.1.0 — "unfreeze the keys". Each test below pins one of the five welds that
+# were removed, or the silent-loss path that was closed. The encounter that
+# earned the first class is reproduced in `validate_tag`'s docstring.
+# ---------------------------------------------------------------------------
+
+class TestSilentBlockLoss(unittest.TestCase):
+    """The cardinal sin (§3.6): capture used to WRITE a header it could not read back,
+    report success, and lose the block on the next read."""
+
+    def _run(self, argv, stdin_text):
+        import contextlib
+        import io
+        buf_out, buf_err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
+            old, sys.stdin = sys.stdin, io.StringIO(stdin_text)
+            try:
+                rc = scribe.main(argv)
+            finally:
+                sys.stdin = old
+        return rc, buf_out.getvalue(), buf_err.getvalue()
+
+    def test_capture_refuses_a_value_that_would_swallow_the_block(self):
+        """The exact reproduction from v1.0.0: `--topic "two words"` reported
+        `captured block #ac42` at exit 0, and the block was gone on the next read."""
+        rc, out, err = self._run(["capture", "--topic", "two words", "-"], "body\n")
+        self.assertEqual(rc, 1)                      # refused, not "captured"
+        self.assertIn("REFUSED", err)
+        self.assertIn("two-words", err)              # names the fix, does not apply it
+        self.assertNotIn("@@ ", out)                 # nothing written
+
+    def test_generic_tag_flag_is_validated_too(self):
+        """The new front door must not re-open the old hole (any key, any value)."""
+        rc, _, err = self._run(["capture", "--tag", "path:away from loss", "-"], "b\n")
+        self.assertEqual(rc, 1)
+        self.assertIn("REFUSED", err)
+
+    def test_a_good_value_still_captures(self):
+        rc, out, _ = self._run(
+            ["capture", "--tag", "act:guards-the-boundary", "-"], "b\n")
+        self.assertEqual(rc, 0)
+        self.assertIn("@act:guards-the-boundary", out)
+
+    def test_read_announces_a_malformed_header_and_never_refuses(self):
+        """The read/write ruling: a read ANNOUNCES loudly and still hands over the
+        material (§3.1 — a pile with one bad line must not become unopenable), with a
+        non-zero exit so nothing mistakes it for a clean run."""
+        pile = ("@@ #a1 2026-01-01T00:00 @topic:ok @source:s\nbody one\n\n"
+                "@@ #b2 2026-01-01T00:01 @path:two words\nbody two\n")
+        bad = scribe.scan_malformed_headers(pile)
+        self.assertEqual([n for n, _ in bad], [4])
+        self.assertEqual(len(scribe.parse_pile(pile)), 1)   # the loss itself, unchanged
+
+    def test_a_pasted_diff_hunk_is_not_a_false_alarm(self):
+        """`@@ -1,4 +1,4 @@` at column 0 is legitimate body text. The check requires
+        the `#` id sigil precisely so a pasted patch never reports as a broken header."""
+        pile = ("@@ #a1 2026-01-01T00:00 @topic:patch @source:s\n"
+                "@@ -1,4 +1,4 @@\n-old\n+new\n")
+        self.assertEqual(scribe.scan_malformed_headers(pile), [])
+
+    def test_write_back_refuses_over_a_broken_pile(self):
+        """`tag`/`push` rewrite the whole pile; doing that over an unparsed header
+        would cement the swallowed block into its neighbour's body for good."""
+        import os
+        import tempfile
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "p.txt")
+        with open(path, "w") as fh:
+            fh.write("@@ #a1 2026-01-01T00:00 @topic:ok @source:s\nb\n\n"
+                     "@@ #b2 2026-01-01T00:01 @path:two words\nb2\n")
+        with open(path) as fh:
+            before = fh.read()
+        import contextlib
+        import io
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            scribe.cmd_tag(_Args(id="a1", pile=path, tag=["aspect:manifesting"],
+                                 topic=None, state=None, source=None, remove=None,
+                                 tag_form="repeated"))
+        with open(path) as fh:
+            self.assertEqual(fh.read(), before)       # untouched
+
+
+class _Args:
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+class TestChooseableToc(unittest.TestCase):
+    """§3.13/§3.8 — the one ordering that could not be chosen, and could not say so."""
+
+    def setUp(self):
+        self.blocks = scribe.parse_pile(
+            "@@ #a1 2026-01-01T00:00 @topic:nas @act:keeps-the-pile-readable @source:s\nAlpha\n\n"
+            "@@ #b2 2026-01-01T00:01 @topic:nas @act:keeps-the-pile-readable @source:s\nBeta\n\n"
+            "@@ #c3 2026-01-01T00:02 @topic:git @source:s\nGamma\n")
+
+    def test_toc_groups_by_any_key(self):
+        toc = scribe.render_toc(self.blocks, key="act")
+        self.assertIn("## keeps-the-pile-readable (2)", toc)
+        self.assertIn("grouped by @act:", toc)
+
+    def test_toc_names_the_keys_it_does_not_show(self):
+        toc = scribe.render_toc(self.blocks, key="topic")
+        self.assertIn("NOT shown by this index:", toc)
+        self.assertIn("@act:", toc)
+
+    def test_the_loss_line_is_emitted_even_when_there_is_no_loss(self):
+        """Show-Always: an index that saw everything and an index that dropped things
+        must never look the same (§3.8). Silence is not an answer."""
+        blocks = scribe.parse_pile("@@ #a1 2026-01-01T00:00 @topic:x\nA\n")
+        toc = scribe.render_toc(blocks, key="topic")
+        self.assertIn("NOT shown by this index: (no other keys present in this pile)", toc)
+        self.assertIn("every block carries @topic:", toc)
+
+    def test_toc_names_the_blocks_that_fell_out(self):
+        toc = scribe.render_toc(self.blocks, key="act")
+        self.assertIn("1 of 3 blocks carry no @act:", toc)
+        self.assertIn("## (no @act:) (1)", toc)
+
+
+class TestRetiredKeyIsNeverSilent(unittest.TestCase):
+    """§3.8 — a retired thing must not look identical to a live one. A classification,
+    not a fault: it announces and does not block."""
+
+    def test_writing_the_retired_key_is_announced_not_refused(self):
+        notes = scribe.validate_tag("state", "live")
+        self.assertTrue(any("RETIRED" in n for n in notes))
+
+    def test_the_replacement_is_named(self):
+        self.assertEqual(scribe.RETIRED_KEYS["state"], "aspect")
+        notes = scribe.validate_tag("state", "live")
+        self.assertTrue(any("@aspect:" in n for n in notes))
+
+    def test_a_live_key_produces_no_note(self):
+        self.assertEqual(scribe.validate_tag("aspect", "manifesting"), [])
+
+    def test_comma_in_a_value_is_disclosed_not_silently_split(self):
+        notes = scribe.validate_tag("topic", "nas,zfs")
+        self.assertTrue(any("2 separate tags" in n for n in notes))
+
+
+class TestPileStamp(unittest.TestCase):
+    """A pile carries its own reading instructions in-band, so any reader — human or
+    a model asked to search the drive — meets them in the artifact rather than in
+    someone's config (§5.4: an instruction in a config can be skipped, silently)."""
+
+    def _pile(self):
+        import os
+        import tempfile
+        return os.path.join(tempfile.mkdtemp(), "p.txt")
+
+    def _capture(self, path, topic, extra=None):
+        scribe.cmd_capture(_Args(file=None, html=False, tag=None, topic=[topic],
+                                 state=None, source="self", append=path,
+                                 no_stamp=bool(extra), tag_form="repeated",
+                                 ts="2026-01-01T00:00"))
+
+    def setUp(self):
+        import io
+        self._stdin, sys.stdin = sys.stdin, io.StringIO("body text\n")
+        self._err, sys.stderr = sys.stderr, io.StringIO()
+
+    def tearDown(self):
+        sys.stdin, sys.stderr = self._stdin, self._err
+
+    def test_a_new_pile_is_stamped_at_birth(self):
+        import io
+        p = self._pile()
+        self._capture(p, "nas")
+        with open(p) as fh:
+            text = fh.read()
+        self.assertTrue(scribe.is_stamped(text))
+        self.assertIn("scribe view", text)
+        self.assertIn("FRAGMENTS", text)          # names what grep cannot give back
+        sys.stdin = io.StringIO("second body\n")
+        self._capture(p, "backup")
+        with open(p) as fh:
+            self.assertEqual(fh.read().count(scribe.STAMP_MARK), 1)   # not re-stamped
+
+    def test_deleting_the_stamp_keeps_it_deleted(self):
+        """capture stamps at BIRTH only, so removing it is a decision that sticks —
+        the tool never re-adds a header the human took out (§3.1)."""
+        import io
+        p = self._pile()
+        self._capture(p, "nas")
+        with open(p) as fh:
+            body = "\n".join(l for l in fh.read().split("\n")
+                             if not l.startswith("#")).lstrip("\n")
+        with open(p, "w") as fh:
+            fh.write(body)
+        sys.stdin = io.StringIO("second body\n")
+        self._capture(p, "backup")
+        with open(p) as fh:
+            self.assertFalse(scribe.is_stamped(fh.read()))
+
+    def test_the_stamp_costs_the_format_nothing(self):
+        """Every stamp line is a comment in the preamble: no block count, no index and
+        no round trip may change because a pile is stamped."""
+        pile = ("@@ #a1 2026-01-01T00:00 @topic:nas @source:s\nAlpha\n\n"
+                "@@ #b2 2026-01-01T00:01 @topic:git @source:s\nBeta\n")
+        plain = scribe.parse_pile(pile)
+        stamped = scribe.parse_pile(scribe.PILE_STAMP + "\n" + pile)
+        self.assertEqual(len([b for b in plain if b.id]),
+                         len([b for b in stamped if b.id]))
+        self.assertEqual(scribe.render_toc(plain), scribe.render_toc(stamped))
+        # and no stamp line may ever be mistaken for a header
+        self.assertEqual(scribe.scan_malformed_headers(scribe.PILE_STAMP), [])
+
+    def test_a_rewrite_preserves_the_stamp(self):
+        """`tag`/`push` serialize the WHOLE pile back. A stamp that vanished on the
+        first tag edit would be worse than no stamp at all."""
+        p = self._pile()
+        with open(p, "w") as fh:
+            fh.write(scribe.PILE_STAMP + "\n@@ #a1 2026-01-01T00:00 @topic:x\nb\n")
+        scribe.cmd_tag(_Args(id="a1", pile=p, tag=["aspect:manifesting"], topic=None,
+                             state=None, source=None, remove=None, tag_form="repeated"))
+        with open(p) as fh:
+            after = fh.read()
+        self.assertTrue(scribe.is_stamped(after))
+        self.assertIn("@aspect:manifesting", after)
+
+    def test_the_stamp_makes_no_file_level_claim_about_who_wrote_the_blocks(self):
+        """A pile is a MIXTURE — the human's writing, material handed in, and blocks an
+        AI wrote. Provenance is per block (@source:/@origin:/@attests:), so one sentence
+        at the top cannot be true of all of it, and a reader who trusts it inherits a
+        false attribution for every block it does not fit. The stamp points at where
+        provenance lives and says that an absent tag means UNKNOWN (§3.8). This test
+        exists because a first draft did claim it."""
+        s = scribe.PILE_STAMP
+        self.assertNotIn("this file's author", s)
+        self.assertIn("PER BLOCK", s)
+        for key in ("@source:", "@origin:", "@attests:"):
+            self.assertIn(key, s)
+        self.assertIn("unknown", s.lower())      # absence is named, not implied
+
+    def test_stamping_an_existing_pile_is_idempotent_and_keeps_a_human_preamble(self):
+        p = self._pile()
+        with open(p, "w") as fh:
+            fh.write("my own notes header\n\n@@ #a1 2026-01-01T00:00 @topic:x\nb\n")
+        scribe.cmd_stamp(_Args(pile=p, show=False))
+        scribe.cmd_stamp(_Args(pile=p, show=False))     # second run must change nothing
+        with open(p) as fh:
+            text = fh.read()
+        self.assertEqual(text.count(scribe.STAMP_MARK), 1)
+        self.assertIn("my own notes header", text)      # his words untouched
 
 
 class TestDoctorDisclosure(unittest.TestCase):

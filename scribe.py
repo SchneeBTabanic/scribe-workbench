@@ -17,6 +17,20 @@
 #         fabricates structure it cannot prove, and never claims to derive meaning.
 #
 # stdlib only. Optional external process: `pandoc` (HTML path only), shelled to.
+#
+# v1.1.0 — "unfreeze the keys" (the v1.0-frozen record is preserved intact in
+# PROVENANCE.md; this is a named new version, not a silent edit — §5.8). Five welds
+# to one key were removed and one silent-loss path was closed:
+#   - a tag value the format cannot carry is REFUSED on write (§3.6) and ANNOUNCED
+#     on read (§3.8); it used to be written by `capture` itself, reported as success,
+#     and swallow the block on the next read.
+#   - the table of contents takes `--by <key>` and NAMES its axis and its loss (§3.13/§3.8).
+#   - `--tag key:value` writes any key; the CLI no longer holds an opinion about which
+#     vocabulary is expressible (§3.1 — the vocabulary is the sovereign's).
+#   - `@state:` is declared RETIRED and announced wherever met; the undisclosed
+#     recency-ordering that was welded to it is removed and every view now states
+#     its order (§3.8, order-is-a-value).
+#   - `scribe keys` reports what the vocabulary has actually become.
 
 import argparse
 import hashlib
@@ -32,7 +46,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 # The one external process the HTML path shells to. Recorded for provenance (§4.4); the
 # tool discloses the running pandoc via `scribe doctor` and hard-fails if it is absent.
@@ -56,6 +70,168 @@ TAG_RE = re.compile(r"@(?P<key>[^\s:]+):(?P<val>[^\s]+)")
 # The in-band loss marker. Plain-text readable, greppable (`grep scribe:loss`), and
 # visibly NOT the sovereign's content. Sits on its own line just above what it marks.
 LOSS_PREFIX = "[[scribe:loss"
+
+# The in-band marker for a header line the parser could not read. Same shape and same
+# greppability as the loss marker — scribe already obeyed the name-your-loss law on the
+# way IN (capture) and not on the way OUT (read/derive). This closes that direction.
+MALFORMED_PREFIX = "[[scribe:malformed-header"
+
+# Exit code for "the command ran and completed, AND has findings to disclose". Distinct
+# from 1 (the command failed) so a caller can tell a refusal from a loud success.
+EXIT_FINDINGS = 2
+
+# Keys RETIRED from the vocabulary, and what replaced each. §3.8: a retired thing must
+# never look identical to a live one, so the tool announces one wherever it meets one —
+# on write, on read, in a pile. It does not refuse: a retired key is a *classification*,
+# not a fault. (Prior art the project already adopted once, for the tag-validator's
+# third verdict tier: Debian lintian's classification tag + `Show-Always` — a finding
+# formally separate from an error, emitted every time, and therefore countable.)
+RETIRED_KEYS = {"state": "aspect"}
+
+# A line that is an INTENDED header but did not parse. Deliberately narrower than
+# "starts with @@": a pasted unified-diff hunk (`@@ -1,4 +1,4 @@`) is legitimate body
+# text and must not be reported as a broken header, so the id sigil `#` is required.
+# NAMED LIMIT (§3.8): a header whose `#` itself is missing or mistyped is NOT caught
+# by this check — the write-side refusal below is what covers that case.
+INTENDED_HEADER_RE = re.compile(r"^@@ +#\S")
+
+
+# ---------------------------------------------------------------------------
+# The pile stamp — a pile carries its own reading instructions, in-band.
+#
+# RULED by the sovereign 2026-07-28, for a reason wider than this tool: piles will
+# sit on a drive that an AI assistant may be asked to search. Any reader — human or
+# model, with or without scribe — must meet the instruction IN THE ARTIFACT rather
+# than in someone's config or memory. §5.4 (structural fixes over prompt hacks): an
+# instruction living in a skills file can be skipped, and skipped SILENTLY, which is
+# the failure mode §3.8 refuses everywhere else. Prior art: Debian's `README.Debian`
+# — the package explains its own local deviation to whoever opens it.
+#
+# WHERE IT SITS: the preamble (before the first `@@`). parse_pile already preserves
+# preamble text as a Block with id="" and every count/index already excludes it, so
+# the stamp costs the format nothing.
+#
+# WHEN IT IS WRITTEN: only when `capture --append` CREATES a pile, or when the human
+# runs `scribe stamp` by hand. Never added to an existing pile behind his back, and —
+# because capture only stamps at birth — deleting it means it stays deleted (§3.1).
+#
+# WHAT IT MAY NOT SAY. A first draft closed with "the tags are written by this file's
+# author." That is a FILE-LEVEL claim about a property the tag vocabulary already
+# handles PER BLOCK, and the bench sheet had already ruled the distinction finer than
+# the stamp was using it: `@source:` (which mind said it), `@origin:` (human or ai —
+# "the axis that lets the pile be split into the human's programme and the AI's
+# programme later; cheap to write now, impossible to reconstruct afterwards"), and
+# `@attests:` ("who vouches for this, which is not always who wrote it — author and
+# guarantor are different jobs"). A pile is a MIXTURE by construction, so one sentence
+# at the top cannot be true of all of it, and a reader — human or model — who trusts it
+# inherits a false attribution for every block it does not fit. The stamp therefore
+# makes no provenance claim at all: it says where provenance lives and that an absent
+# tag means UNKNOWN (§3.8 — a missing value and a deliberate one must never look the
+# same). Same shape as the fix that closed Frog & The Seed: do not assert a property,
+# point at the record; and where there is no record, say so.
+# ---------------------------------------------------------------------------
+
+STAMP_MARK = "# This file is a scribe pile"
+
+PILE_STAMP = f"""{STAMP_MARK} — one canonical file, appended in arrival order.
+# Read it plainly: a block begins at a line starting `@@ ` in column 0, carrying
+# `#<id> <timestamp> @key:value ...`, and runs until the next such line or the end
+# of the file. No tool is needed to read this file. A tool is needed to SEARCH it well.
+#
+# TO SEARCH IT WELL (human or AI assistant):
+#   scribe keys   PILE                  the tag keys and values this pile carries
+#   scribe toc    PILE [--by KEY]       contents, grouped by any key you name
+#   scribe view   key:value PILE        every block carrying that tag, whole
+#   scribe blocks PILE                  every block with its whole tag run
+# Views compose — `scribe view a:b PILE | scribe view c:d -` is an AND-query.
+#
+# WHY NOT JUST grep: a grep over this file returns FRAGMENTS. Match inside a body and
+# you get a line with no id, no timestamp and no tags; match a header and you get the
+# provenance with none of the claim. It never hands back a whole record. If you must
+# grep, read back up to the nearest `@@ ` line before quoting anything from here.
+#
+# PROVENANCE IS PER BLOCK, NEVER PER FILE. A pile is a mixture by construction: the
+# human's own writing, material handed in from elsewhere, and blocks an AI wrote. Do
+# not attribute anything here to "the author of this file" — there is no such person.
+# Read it off the block's own tags, and say when they are absent rather than guessing:
+#   @source:  which mind said it        @origin:  human or ai — which kind made it
+#   @attests: who vouches for it, which is NOT always who wrote it
+# Untagged means unknown, not mine and not anyone's. (scribe {VERSION})
+"""
+
+
+def is_stamped(text):
+    return text.lstrip().startswith(STAMP_MARK)
+
+
+class TagRefused(ValueError):
+    """A tag the pile format cannot carry. Raised on the WRITE side only."""
+
+
+def validate_tag(key, value):
+    """Refuse to write a tag that would produce a header the parser cannot read; return
+    a list of non-blocking NOTES to disclose.
+
+    §3.14 — the licence and the encounter, cited beside the check.
+
+    Licensed by §3.6 (*"silent failure is treated as the cardinal engineering sin"*)
+    and §7's checklist question *can anything fail silently without announcing it?*
+    The encounter that earned it, reproduced on the live machine 2026-07-28 against
+    the shipped v1.0.0 — through the sanctioned front door, not by hand-editing:
+
+        $ scribe capture --topic "two words" --append pile.txt
+        captured block #ac42                       <- reported success, exit 0
+        $ scribe blocks pile.txt
+        2 block(s)                                 <- three were captured; #ac42 gone
+
+    The space made HEADER_RE fail, so the header line was absorbed into the PREVIOUS
+    block's body: the pile silently got shorter, and a dropped block and a short pile
+    are indistinguishable. `capture` never re-parsed what it wrote.
+
+    Refusals here are the write half. The read half is scan_malformed_headers().
+    """
+    notes = []
+    if not key:
+        raise TagRefused("empty tag key")
+    if not value:
+        raise TagRefused(f"empty value for @{key}: — a tag must carry one, and an "
+                         f"absent value must be a NAMED value, not an empty one (§3.8)")
+    if any(c.isspace() for c in key) or ":" in key:
+        raise TagRefused(f"tag key {key!r} contains whitespace or ':' — the header "
+                         f"could not be read back")
+    if any(c.isspace() for c in value):
+        raise TagRefused(
+            f"tag value {value!r} for @{key}: contains whitespace. The header would "
+            f"not parse and the block would be absorbed into the previous one with no "
+            f"error (§3.6). Use hyphens: @{key}:{'-'.join(value.split())}")
+    if "," in value:
+        notes.append(f"@{key}:{value} contains ',' — the parser reads a comma list, so "
+                     f"this will read back as {len(value.split(','))} separate tags")
+    if key in RETIRED_KEYS:
+        notes.append(f"@{key}: is RETIRED — replaced by @{RETIRED_KEYS[key]}:. Written "
+                     f"as asked; nothing was silently substituted")
+    return notes
+
+
+def parse_tag_arg(s):
+    """Parse a `--tag key:value` argument (§3.1: the vocabulary is the sovereign's —
+    scribe stores whatever key it is given and holds no registry)."""
+    if ":" not in s:
+        raise TagRefused(f"--tag takes key:value (e.g. --tag act:guards-the-boundary), "
+                         f"got {s!r}")
+    key, value = s.split(":", 1)
+    return key, value
+
+
+def scan_malformed_headers(text):
+    """Find column-0 lines that are intended headers but did not parse.
+
+    `@@` was verified collision-free against the sovereign's real material at GATE 1
+    (his separators are rows of '#'), so an `@@ #…` at column 0 is always an intended
+    header — there is no legitimate absorbed case. Returns [(lineno, line)], 1-based.
+    """
+    return [(i, line) for i, line in enumerate(text.split("\n"), 1)
+            if INTENDED_HEADER_RE.match(line) and not HEADER_RE.match(line)]
 
 
 @dataclass
@@ -488,29 +664,68 @@ def render_view(blocks, key, value, recent=False, tag_form="repeated"):
     return f"{header}\n{note}\n\n{body}\n", chosen
 
 
-def render_toc(blocks):
-    """Regenerated table of contents (§4.3): topics with their blocks, derived from
-    the tags — never hand-kept. Replaces the sovereign's hand-maintained top list."""
-    by_topic = {}
-    untagged = []
+def render_toc(blocks, key="topic"):
+    """Regenerated table of contents (§4.3): blocks grouped by ONE chosen key, derived
+    from the tags — never hand-kept. Replaces the sovereign's hand-maintained top list.
+
+    The axis is CHOOSEABLE and NAMED. Two laws licence the change (§3.14):
+
+    §3.13 — deriving a **non-governing** view from the canonical source is the earned
+      half of that split; a table of contents governs nothing. Until v1.1.0 this was
+      the one ordering in a tool whose founding law is *arrival is the only physical
+      ordering, every other ordering is derived* that could not be chosen — which
+      quietly made `@topic:` load-bearing whatever any bench sheet said.
+
+    §3.8 — an index that reads one key is lossy BY CONSTRUCTION, so it states its axis
+      and lists the keys present in the pile that it does not show. Those lines are
+      emitted ALWAYS, including when there is nothing to report, so that "this index
+      saw everything" and "this index dropped things" can never look the same.
+
+    Deliberately NOT done (§3.3): the tool never picks the axis that groups most
+    tidily. That would be a measurement taking the wheel. The human names the key,
+    every time.
+    """
+    grouped = {}
+    unkeyed = []
+    other = Counter()
+    n_blocks = 0
     for b in blocks:
         if not b.id:
             continue
-        tops = b.topics()
-        if not tops:
-            untagged.append(b)
-        for t in tops:
-            by_topic.setdefault(t, []).append(b)
+        n_blocks += 1
+        vals = b.get(key)
+        if not vals:
+            unkeyed.append(b)
+        for v in vals:
+            grouped.setdefault(v, []).append(b)
+        for k, _ in b.tags:
+            if k != key:
+                other[k] += 1
     lines = ["# Table of contents (derived — do not hand-edit; run `scribe toc`)",
-              f"# {sum(1 for b in blocks if b.id)} blocks, {len(by_topic)} topics", ""]
-    for topic in sorted(by_topic, key=lambda t: (-len(by_topic[t]), t)):
-        lines.append(f"## {topic} ({len(by_topic[topic])})")
-        for b in by_topic[topic]:
+             f"# grouped by @{key}: — {n_blocks} blocks, {len(grouped)} distinct "
+             f"@{key}: values"]
+    # The always-emitted loss line (§3.8). Absent findings still get a line.
+    if other:
+        shown = " ".join(f"@{k}:({n})" for k, n in
+                         sorted(other.items(), key=lambda kv: (-kv[1], kv[0])))
+        lines.append(f"# NOT shown by this index: {shown}  "
+                     f"— re-run with `--by <key>` to see any of them")
+    else:
+        lines.append("# NOT shown by this index: (no other keys present in this pile)")
+    if unkeyed:
+        lines.append(f"# {len(unkeyed)} of {n_blocks} blocks carry no @{key}: "
+                     f"— listed under (no @{key}:) below")
+    else:
+        lines.append(f"# every block carries @{key}: — nothing fell out of this index")
+    lines.append("")
+    for val in sorted(grouped, key=lambda t: (-len(grouped[t]), t)):
+        lines.append(f"## {val} ({len(grouped[val])})")
+        for b in grouped[val]:
             lines.append(f"   #{b.id}  {block_title(b)}")
         lines.append("")
-    if untagged:
-        lines.append(f"## (untagged) ({len(untagged)})")
-        for b in untagged:
+    if unkeyed:
+        lines.append(f"## (no @{key}:) ({len(unkeyed)})")
+        for b in unkeyed:
             lines.append(f"   #{b.id}  {block_title(b)}")
         lines.append("")
     return "\n".join(lines)
@@ -576,6 +791,77 @@ def _read_input(path):
         return fh.read()
 
 
+def _announce_malformed(text, where):
+    """READ side: announce every unparsed header, always, and carry on.
+
+    The read/write asymmetry is a ruling, not an accident. Refusing to open a pile
+    that has one bad line would put the sovereign's own material out of his reach —
+    a worse harm than a loud read (§3.1). So a read ANNOUNCES and continues, with a
+    non-zero exit so nothing downstream can mistake it for a clean run; a write-back
+    REFUSES (see `_refuse_if_malformed`). §3.6 permits a fallback only when declared,
+    never assumed — this is the declaration.
+
+    Returns the number of findings.
+    """
+    bad = scan_malformed_headers(text)
+    for n, line in bad:
+        sys.stderr.write(f"{MALFORMED_PREFIX} {where}:{n}]] not read as a header — "
+                         f"absorbed into the PREVIOUS block's body: "
+                         f"{line.strip()[:72]}\n")
+    if bad:
+        sys.stderr.write(
+            f"  {len(bad)} malformed header line(s): any block count reported here is "
+            f"SHORT by that many. Usual cause: a space inside a tag value. "
+            f"Fix the line(s) above, then re-run.\n")
+    return len(bad)
+
+
+def _refuse_if_malformed(text, where):
+    """WRITE-BACK side: refuse to rewrite a pile whose headers do not all parse.
+
+    `tag` and `push` serialize the whole pile back to disk. Doing that over an
+    unparsed header would cement a swallowed block into its neighbour's body as
+    though it had always been there. Hard-fail instead (§3.6)."""
+    bad = scan_malformed_headers(text)
+    if bad:
+        _announce_malformed(text, where)
+        raise SystemExit(f"REFUSED: will not rewrite {where} while {len(bad)} header "
+                         f"line(s) do not parse — a rewrite would make the loss "
+                         f"permanent. Fix the line(s) above first.")
+
+
+def _announce_retired_keys(blocks, where):
+    """Announce any RETIRED key found in a pile (§3.8: a retired thing must not look
+    identical to a live one). A classification, never a fault: it does not block and
+    does not change the exit code."""
+    found = Counter(k for b in blocks for k, _ in b.tags if k in RETIRED_KEYS)
+    for k, n in sorted(found.items()):
+        sys.stderr.write(f"  NOTE: {where} carries the RETIRED key @{k}: on {n} tag(s)"
+                         f" — replaced by @{RETIRED_KEYS[k]}:\n")
+
+
+def _emit_tag_notes(notes):
+    for n in notes:
+        sys.stderr.write(f"  NOTE: {n}\n")
+
+
+def _collect_tags(args):
+    """Build the tag list for capture/tag from the specific flags AND the generic
+    `--tag key:value`, then validate every one before anything is written (§3.6).
+    Raises TagRefused; returns (tags, notes)."""
+    tags = []
+    for t in (getattr(args, "topic", None) or []):
+        tags.append(("topic", t))
+    if getattr(args, "state", None):
+        tags.append(("state", args.state))
+    for s in (getattr(args, "tag", None) or []):
+        tags.append(parse_tag_arg(s))
+    notes = []
+    for k, v in tags:
+        notes.extend(validate_tag(k, v))
+    return tags, notes
+
+
 def _atomic_write(path, text):
     """Crash-safe write of the canonical pile: write a temp file in the same directory,
     fsync it, then atomically rename over the target (§4.3 — never risk the truth on a
@@ -598,13 +884,13 @@ def _atomic_write(path, text):
 
 def cmd_capture(args):
     text = _read_input(args.file)
-    tags = []
-    for t in (args.topic or []):
-        tags.append(("topic", t))
-    if args.state:
-        tags.append(("state", args.state))
+    # Validate BEFORE reducing or writing: a tag the format cannot carry must never
+    # reach the file, because nothing downstream re-parses what capture wrote (§3.6).
+    tags, notes = _collect_tags(args)
     source = args.source or "unknown"
+    notes.extend(validate_tag("source", source))
     tags.append(("source", source))
+    _emit_tag_notes(notes)
 
     annotations = None
     if args.html:
@@ -616,12 +902,54 @@ def cmd_capture(args):
     out = serialize_block(block, tag_form=args.tag_form)
 
     if args.append:
+        # A pile is stamped at BIRTH only — never bolted onto an existing one, so that
+        # deleting the stamp keeps it deleted (§3.1). Declared, never assumed (§3.6):
+        # the stamping is reported, and --no-stamp declines it.
+        stamped = False
+        if not args.no_stamp and not _pile_exists_nonempty(args.append):
+            with open(args.append, "w", encoding="utf-8") as fh:
+                fh.write(PILE_STAMP)
+            stamped = True
         with open(args.append, "a", encoding="utf-8") as fh:
             fh.write(("\n\n" if _needs_sep(args.append) else "") + out + "\n")
+        if stamped:
+            sys.stderr.write(f"  new pile {args.append} — stamped with how to read and "
+                             f"search it (delete the header block if you don't want it; "
+                             f"it is never re-added)\n")
         _report_findings(findings, block)
     else:
         sys.stdout.write(out + "\n")
         _report_findings(findings, block)
+    return 0
+
+
+def _pile_exists_nonempty(path):
+    try:
+        return os.path.getsize(path) > 0
+    except OSError:
+        return False
+
+
+def cmd_stamp(args):
+    """Put the pile's own reading instructions at the top of an EXISTING pile.
+
+    The retro-fit half of the stamp: `capture --append` stamps a pile at birth, this
+    stamps one that already exists. A named verb the human takes deliberately (§3.9),
+    never a thing the tool does to his file on its own (§3.1). Idempotent: on an
+    already-stamped pile it reports and changes nothing — it never rewrites a stamp
+    the human may have edited."""
+    if args.show:
+        sys.stdout.write(PILE_STAMP)
+        return 0
+    with open(args.pile, "r", encoding="utf-8") as fh:
+        text = fh.read()
+    if is_stamped(text):
+        sys.stderr.write(f"{args.pile} is already stamped — unchanged\n")
+        return 0
+    _refuse_if_malformed(text, args.pile)
+    _atomic_write(args.pile, PILE_STAMP + "\n" + text.lstrip("\n"))
+    sys.stderr.write(f"{args.pile} stamped — {len(PILE_STAMP.splitlines())} comment "
+                     f"lines added above the first block; no block was touched\n")
     return 0
 
 
@@ -661,7 +989,11 @@ def cmd_check(args):
 
 
 def cmd_blocks(args):
-    """Parse a pile and list its blocks — proves the format parses and round-trips."""
+    """Parse a pile and list its blocks — proves the format parses and round-trips.
+
+    Shows the WHOLE tag run, not just `@topic:`. This listing is the sovereign's
+    check that a hand-typed header landed; showing one key would answer that question
+    for one key only."""
     text = _read_input(args.file)
     blocks = parse_pile(text)
     n = 0
@@ -670,10 +1002,38 @@ def cmd_blocks(args):
             sys.stdout.write(f"(preamble, {len(b.body.splitlines())} lines)\n")
             continue
         n += 1
-        topics = ",".join(b.topics()) or "-"
-        sys.stdout.write(f"#{b.id}  {b.ts}  topics={topics}  ({len(b.body.splitlines())} lines)\n")
+        tags = " ".join(f"@{k}:{v}" for k, v in b.tags) or "(no tags)"
+        sys.stdout.write(f"#{b.id}  {b.ts}  {tags}  "
+                         f"({len(b.body.splitlines())} lines)\n")
     sys.stderr.write(f"{n} block(s)\n")
-    return 0
+    bad = _announce_malformed(text, args.file)
+    _announce_retired_keys(blocks, args.file)
+    return EXIT_FINDINGS if bad else 0
+
+
+def cmd_keys(args):
+    """Report what the vocabulary has actually become: every distinct key in the pile,
+    its values, and counts. The companion to `toc --by` — an axis you cannot see is an
+    axis you cannot choose. Replaces a `grep | tr | sed | sort -u` pipeline that lived
+    in a paragraph of the guide rather than in the tool."""
+    text = _read_input(args.pile)
+    blocks = parse_pile(text)
+    per_key = {}
+    for b in blocks:
+        for k, v in b.tags:
+            per_key.setdefault(k, Counter())[v] += 1
+    if not per_key:
+        sys.stdout.write("(no tags in this pile)\n")
+    for k in sorted(per_key, key=lambda k: (-sum(per_key[k].values()), k)):
+        vals = per_key[k]
+        retired = f"   [RETIRED — replaced by @{RETIRED_KEYS[k]}:]" if k in RETIRED_KEYS else ""
+        sys.stdout.write(f"@{k}:  {sum(vals.values())} tag(s), "
+                         f"{len(vals)} distinct value(s){retired}\n")
+        if not args.counts_only:
+            for v, n in sorted(vals.items(), key=lambda kv: (-kv[1], kv[0])):
+                sys.stdout.write(f"    {v}  ({n})\n")
+    bad = _announce_malformed(text, args.pile)
+    return EXIT_FINDINGS if bad else 0
 
 
 def _selector(s):
@@ -684,37 +1044,70 @@ def _selector(s):
     return key, value
 
 
+# §3.8, order-is-a-value. Until v1.1.0 both `view` and `export` carried
+#     recent = args.recent or key == "state"
+# — an ordering rule welded to one key and disclosed nowhere. When `@state:` was
+# retired the behaviour did NOT move with the vocabulary: `view aspect:manifesting`
+# silently ordered differently from the `view state:live` it replaced, and nothing
+# announced the change. The implicit rule is removed. Ordering now comes from
+# `--recent` alone, and every view STATES the order it used — including arrival order,
+# so that an ordering choice is never left to be inferred.
+
+def _order_note(recent):
+    return "most-recent first" if recent else "arrival order"
+
+
+def _note_retired_selector(key):
+    if key in RETIRED_KEYS:
+        sys.stderr.write(
+            f"  NOTE: selector key @{key}: is RETIRED — replaced by "
+            f"@{RETIRED_KEYS[key]}:. It also no longer defaults to most-recent-first; "
+            f"pass --recent if that is what you want.\n")
+
+
 def cmd_view(args):
-    blocks = parse_pile(_read_input(args.pile))
+    text_in = _read_input(args.pile)
+    blocks = parse_pile(text_in)
     key, value = _selector(args.selector)
-    recent = args.recent or key == "state"   # a state/salience view defaults recent-first
+    recent = args.recent
     text, chosen = render_view(blocks, key, value, recent=recent, tag_form=args.tag_form)
     sys.stdout.write(text)
-    sys.stderr.write(f"{len(chosen)} block(s) in view {key}:{value}"
-                     f"{' (most-recent first)' if recent else ''}\n")
-    return 0
+    sys.stderr.write(f"{len(chosen)} block(s) in view {key}:{value} "
+                     f"({_order_note(recent)})\n")
+    _note_retired_selector(key)
+    bad = _announce_malformed(text_in, args.pile)
+    return EXIT_FINDINGS if bad else 0
 
 
 def cmd_toc(args):
-    blocks = parse_pile(_read_input(args.pile))
-    sys.stdout.write(render_toc(blocks) + "\n")
-    return 0
+    text_in = _read_input(args.pile)
+    blocks = parse_pile(text_in)
+    sys.stdout.write(render_toc(blocks, key=args.by) + "\n")
+    bad = _announce_malformed(text_in, args.pile)
+    _announce_retired_keys(blocks, args.pile)
+    return EXIT_FINDINGS if bad else 0
 
 
 def cmd_export(args):
-    blocks = parse_pile(_read_input(args.pile))
+    text_in = _read_input(args.pile)
+    blocks = parse_pile(text_in)
     key, value = _selector(args.selector)
-    recent = args.recent or key == "state"
+    recent = args.recent
     text, chosen = render_export(blocks, key, value, recent=recent, bare=args.bare)
     sys.stdout.write(text)
-    sys.stderr.write(f"exported {len(chosen)} block(s) of {key}:{value}\n")
-    return 0
+    sys.stderr.write(f"exported {len(chosen)} block(s) of {key}:{value} "
+                     f"({_order_note(recent)})\n")
+    _note_retired_selector(key)
+    bad = _announce_malformed(text_in, args.pile)
+    return EXIT_FINDINGS if bad else 0
 
 
 def cmd_push(args):
     view_text = _read_input(args.view)
     with open(args.pile, "r", encoding="utf-8") as fh:
-        pile_blocks = parse_pile(fh.read())
+        pile_text = fh.read()
+    _refuse_if_malformed(pile_text, args.pile)
+    pile_blocks = parse_pile(pile_text)
     pile_blocks, report = push_view(view_text, pile_blocks)
     # Write the pile back only if something changed; disclose everything (§3.7).
     if report["updated"]:
@@ -732,12 +1125,14 @@ def cmd_push(args):
 
 def cmd_tag(args):
     with open(args.pile, "r", encoding="utf-8") as fh:
-        blocks = parse_pile(fh.read())
-    add = [("topic", t) for t in (args.topic or [])]
-    if args.state:
-        add.append(("state", args.state))
+        pile_text = fh.read()
+    _refuse_if_malformed(pile_text, args.pile)
+    blocks = parse_pile(pile_text)
+    add, notes = _collect_tags(args)
     if args.source:
+        notes.extend(validate_tag("source", args.source))
         add.append(("source", args.source))
+    _emit_tag_notes(notes)
     ok, b = add_tags(blocks, args.id.lstrip("#"), add=add, remove=args.remove)
     if not ok:
         sys.stderr.write(f"no block with id #{args.id.lstrip('#')}\n")
@@ -779,10 +1174,17 @@ def build_parser():
     c = sub.add_parser("capture", help="clean+canonicalize handed input into a block")
     c.add_argument("file", nargs="?", default="-", help="input file, or - for stdin")
     c.add_argument("--html", action="store_true", help="treat input as saved HTML (pandoc)")
+    c.add_argument("--tag", action="append", metavar="key:value",
+                   help="ANY tag, repeatable, e.g. --tag act:guards-the-boundary "
+                        "--tag path:away-from-silent-loss")
     c.add_argument("--topic", action="append", help="topic tag (repeatable)")
-    c.add_argument("--state", help="salience tag, e.g. live")
+    c.add_argument("--state", help="RETIRED (writes @state:, replaced by @aspect:) — "
+                                   "kept working, announced when used")
     c.add_argument("--source", help="provenance, e.g. chatgpt")
     c.add_argument("--append", metavar="PILE", help="append the block to PILE")
+    c.add_argument("--no-stamp", action="store_true",
+                   help="do not write the reading-instructions header when --append "
+                        "creates a new pile")
     c.add_argument("--tag-form", choices=["repeated", "comma"], default="repeated")
     c.add_argument("--ts", help="override timestamp (testing)")
     c.set_defaults(func=cmd_capture)
@@ -805,7 +1207,17 @@ def build_parser():
 
     t = sub.add_parser("toc", help="regenerate the table of contents from tags")
     t.add_argument("pile")
+    t.add_argument("--by", default="topic", metavar="KEY",
+                   help="group by this tag key (default: topic). The index names the "
+                        "axis it used and the keys it did not show. Run `scribe keys` "
+                        "to see what the pile carries.")
     t.set_defaults(func=cmd_toc)
+
+    ky = sub.add_parser("keys", help="list the tag keys and values this pile carries")
+    ky.add_argument("pile")
+    ky.add_argument("--counts-only", action="store_true",
+                    help="keys and counts only, without their values")
+    ky.set_defaults(func=cmd_keys)
 
     e = sub.add_parser("export", help="clean export of a view to paste into the next mind")
     e.add_argument("selector", help="key:value, e.g. topic:nas")
@@ -822,13 +1234,21 @@ def build_parser():
     tg = sub.add_parser("tag", help="add/remove tags on a block by id (in place)")
     tg.add_argument("id", help="block id, e.g. 50c1 or #50c1")
     tg.add_argument("pile")
+    tg.add_argument("--tag", action="append", metavar="key:value",
+                    help="add ANY tag, repeatable, e.g. --tag aspect:manifesting")
     tg.add_argument("--topic", action="append")
-    tg.add_argument("--state")
+    tg.add_argument("--state", help="RETIRED (writes @state:, replaced by @aspect:)")
     tg.add_argument("--source")
     tg.add_argument("--remove", action="append", metavar="key:value",
                     help="remove a tag, e.g. --remove state:live")
     tg.add_argument("--tag-form", choices=["repeated", "comma"], default="repeated")
     tg.set_defaults(func=cmd_tag)
+
+    st = sub.add_parser("stamp", help="add the pile's own reading instructions on top")
+    st.add_argument("pile", nargs="?", help="the pile to stamp (omit with --show)")
+    st.add_argument("--show", action="store_true",
+                    help="print the stamp text without writing anything")
+    st.set_defaults(func=cmd_stamp)
 
     d = sub.add_parser("doctor", help="disclose the frozen artifact SHA + runtime deps")
     d.set_defaults(func=cmd_doctor)
@@ -837,7 +1257,14 @@ def build_parser():
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except TagRefused as e:
+        # A refusal is exit 1 (the command did not do what was asked). A completed
+        # command that has findings to disclose is EXIT_FINDINGS. The two must be
+        # distinguishable (§3.8).
+        sys.stderr.write(f"REFUSED: {e}\n")
+        return 1
 
 
 if __name__ == "__main__":

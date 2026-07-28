@@ -87,12 +87,53 @@ internalise:
 The block header looks like this and is plain text you can read with Scribe switched off:
 
 ```
-@@ #c98b 2026-07-07T19:48 @topic:nas @topic:zfs @state:live @source:gemini
+@@ #c98b 2026-07-07T19:48 @act:protect-against-bit-rot @path:toward-integrity-over-convenience
+   @aspect:manifested @topic:nas @topic:zfs @source:gemini
 ZFS vs ext4: use ZFS on the NAS for checksums and snapshots.
 ```
 
 `@@` starts a block; `#c98b` is its permanent id; the `@key:value` tags are what views
 filter on. Everything after the header line, until the next `@@`, is your verbatim text.
+
+**Which tags to write is a separate sheet, deliberately.** Scribe accepts *any* `@key:value` —
+there is no list of approved keys in the code — so the vocabulary is a discipline you keep, not
+something the tool enforces. Keep
+`tagging/TAGS-bench-sheet.md` (in this repo) open beside this guide; it is the working list.
+(`TAG-KEYS-reference-v1-DRAFT.md` beside it explains *why* each key exists — read it later, not
+while you work.)
+
+**You can write any tag from the command line** — `--tag key:value`, as many as you like:
+
+```bash
+xsel -b | scribe capture --tag act:keeps-the-thread-alive --tag path:toward-one-pile \
+                         --tag aspect:manifesting --topic nas --source gemini --append pile.txt
+```
+
+`--topic` and `--source` still work as before; `--tag` is simply the door to every other key.
+You no longer have to type headers by hand in xed to use the vocabulary. (You still *can* —
+hand-editing the tag run is safe; the `#id` and the timestamp are the two things not to touch.)
+
+**Two things about tags that used to bite you in the terminal — one is now caught for you.**
+A tag value must contain **no spaces** — hyphenate. A space stops scribe recognising the
+header, and the block then folds into the one above it. As of **v1.1.0** scribe will not
+write such a value at all: it refuses, names the line, and shows you the hyphenated form —
+
+```
+REFUSED: tag value 'two words' for @topic: contains whitespace. … Use hyphens: @topic:two-words
+```
+
+and if it meets one already in a pile (typed by hand, or written by an older scribe) it says so
+loudly on every read, names the line number, and warns that the block count is short. It will
+**not refuse to open the pile** — your material always stays reachable — but `scribe tag` and
+`scribe push` refuse to *rewrite* a pile in that state, because a rewrite would make the loss
+permanent. Fix the line it names, then re-run.
+
+And `@state:` is **retired**: it is now `@aspect:` with exactly three values (`manifesting`,
+`manifested`, `prospective`). Old piles carrying `@state:` still parse fine, and `--state`
+still writes it if you ask — but scribe now announces the retirement every time, on writing
+and on reading, so a dead key can never look like a live one. One thing that changed with it:
+a view selected on `state:` used to quietly sort newest-first. It no longer does; **ordering
+now comes from `--recent` only**, and every view says out loud which order it used.
 
 ---
 
@@ -200,7 +241,10 @@ safe direction you already trust.
    ┌─ Job 1: still a xed tab. Compose long input here, safe from the browser. Unchanged. ─┐
 
    capture   :  (saved fragment | xsel -b)  →  scribe capture … --append pile.txt
-   look      :  scribe toc pile.txt                 # the TOC, regenerated, never hand-kept
+   explain   :  scribe stamp pile.txt               # once, for a pile made before v1.1.0
+   look      :  scribe toc pile.txt                 # contents by subject (the default)
+   look again:  scribe toc pile.txt --by path       # …the SAME pile, ordered by reaching
+   what keys :  scribe keys pile.txt                # what your vocabulary has become
    gather    :  scribe view topic:X pile.txt > X.view 2>/dev/null ; xed X.view &
    work      :  edit bodies in xed, save
    land      :  scribe push X.view pile.txt         # edits home by #id ; delete the view
@@ -210,6 +254,39 @@ safe direction you already trust.
 `scribe toc pile.txt` any time prints the whole table of contents from your tags — the list
 you used to hand-maintain at the top of the scratchpad, now free and always current.
 
+**The contents page opens by any key you name.** `--by topic` is only the default, kept so
+nothing you already do changes. `--by act`, `--by path`, `--by aspect` index the same pile
+along a different axis — the pile never moves; only the way in does. And every index now says
+at the top which key it grouped by and **which keys it is not showing you**, so a contents
+page can never quietly suggest that subjects are all there is:
+
+```
+# grouped by @topic: — 13 blocks, 8 distinct @topic: values
+# NOT shown by this index: @source:(13) @act:(9) @path:(9) @aspect:(6)
+# 2 of 13 blocks carry no @topic: — listed under (no @topic:) below
+```
+
+`scribe keys pile.txt` lists every key in the pile with its values and counts — use it to see
+what you actually reach for, and to find the axes worth indexing by. (It replaces the
+`grep | tr | sed | sort -u` recipe this guide used to carry: a practice living in a paragraph
+of prose belongs in the tool.)
+
+**Your pile explains itself to whoever opens it.** A pile created from v1.1.0 onward starts with
+a short comment header saying what the format is, which commands search it properly, and why a
+plain `grep` over it hands back fragments — a body line with no id or tags, or a header with no
+claim, never a whole record. That matters beyond your own use: if you ever point an AI assistant
+at the drive where your piles live, it meets the instruction **in the file** rather than needing
+you to remember to explain it. For a pile you made before this, run `scribe stamp pile.txt` once.
+It is only ever written when a pile is *created* (or when you run `stamp` yourself), so if you
+delete the header it stays deleted — and `--no-stamp` declines it up front. It is all comment
+lines above the first `@@`, so it changes no count, no index and nothing you can push home.
+
+**One thing no command can do for you.** Whichever index you open habitually is the one you
+will quietly start writing *for*. That is why the axis is now plural rather than merely
+better — so that no single one pulls. Watching whether your own `@path:` values start being
+chosen for how tidily they group, rather than for whether they are true, is yours alone; no
+tool can check it.
+
 ---
 
 ## Gotchas that bite in the terminal (all real, all avoidable)
@@ -218,7 +295,10 @@ you used to hand-maintain at the top of the scratchpad, now free and always curr
   lands in the file too and clutters what you open in xed. With it, the file is clean.
 - **Edit views, not the pile.** The pile is safe to read and safe to `push` into; but if you
   hand-edit a block's `@@ #id …` header in the pile you can orphan it. Change tags with
-  `scribe tag <id> pile.txt --topic …` / `--remove topic:…`, not by retyping the header.
+  `scribe tag <id> pile.txt --tag act:… ` / `--remove topic:…`, not by retyping the header.
+- **A non-zero exit is not always a failure.** Exit `1` means scribe refused to do what you
+  asked. Exit `2` means it *did* the job and has something to disclose — a malformed header
+  line, most often. Only `1` means nothing happened.
 - **A view is a snapshot.** If you derive `nas.view`, then capture new NAS blocks, the old
   `nas.view` won't know about them — re-derive it. Views are cheap; regenerate freely.
 - **`--append` vs no `--append`.** With `--append pile.txt`, the block goes into the pile.

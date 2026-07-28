@@ -1,3 +1,51 @@
+# PROVENANCE — Scribe's Workbench
+
+## v1.1.0 — "unfreeze the keys" (2026-07-28) — CURRENT
+
+A named new version, not a silent edit (§5.8: preserve history; never modify a prior
+version in place). The **v1.0-frozen record below is left exactly as it was** and remains
+the attestation for that artifact; this section is additive.
+
+| File | Role | SHA-256 |
+|---|---|---|
+| `scribe.py` | frozen core | `33de9062407a2a3d0a93dba540bd68a9c2b73974cb5d5f24c3bc872ba27c27c6` |
+| `test_scribe.py` | core tests (51) | `1d18ee6a0647c875f6127de3634c46ee9dc874da34013a781428d52ac910de2a` |
+
+The edge (`edge/*`) is **unchanged** from v1.0-frozen; its rows below still hold.
+
+**What changed, and why the freeze was opened.** The sovereign ruled that frozen-ness was
+never a reason not to correct the tool. Five welds bound the code to one tag key, and one
+of them was losing material:
+
+1. **A silent-loss path closed (§3.6).** `capture` would write a tag value containing a
+   space, report success at exit 0, and the block would be absorbed into its predecessor
+   on the next read — a dropped block and a short pile being indistinguishable. Reproduced
+   against v1.0.0 on 2026-07-28; the reproduction is recorded in `validate_tag`'s docstring
+   (§3.14). Now refused on write, announced on every read.
+2. **The read/write ruling.** A read announces and continues with a non-zero exit — a pile
+   with one bad line must never become unopenable (§3.1). A write-back (`tag`, `push`)
+   refuses, because a rewrite would make the loss permanent.
+3. **`toc --by KEY` (§3.13),** and the index now names its axis and the keys it does not
+   show (§3.8). The tool no longer decides which axis is load-bearing; nor does it pick
+   the "best" one (§3.3).
+4. **`--tag key:value` (§3.1)** — the CLI no longer holds an opinion about which vocabulary
+   is expressible.
+5. **`@state:` declared retired** and announced wherever met; the undisclosed recency
+   ordering welded to it is removed, and every view now states its order (§3.8).
+6. **`scribe keys`** — report what the vocabulary has become.
+7. **A pile carries its own reading instructions in-band** (sovereign's ruling, 2026-07-28,
+   for a reason wider than this tool: piles sit on a drive an AI assistant may be asked to
+   search, and an instruction living in a config can be skipped *silently* — §5.4/§3.8).
+   Written only when `capture --append` CREATES a pile, or by `scribe stamp` on an existing
+   one; never bolted onto a pile behind the human's back, and never re-added once deleted
+   (§3.1). `--no-stamp` declines it. All comment lines in the preamble: counts, indexes and
+   round trips are provably identical with and without it, and a rewrite preserves it.
+
+**Test attestation at v1.1.0:** 51 core + 6 edge tests pass. Toolchain unchanged
+(Python 3.13.5, pandoc 3.1.11.1 for the HTML path only, LMDE 7 / Debian 13, non-root).
+
+---
+
 # PROVENANCE — Scribe's Workbench v1.0-frozen
 
 *Freeze record for the frozen core (§4.4: pinned, reproducible, offline-rebuildable from

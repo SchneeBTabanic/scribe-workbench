@@ -42,23 +42,44 @@ appear in many views **without being moved or duplicated**.
 ## Verbs
 
 ```
-scribe capture [--source S] [--topic T]... [--state live] [--html] [--append PILE]
+scribe capture [--tag k:v]... [--topic T]... [--source S] [--html] [--append PILE]
     Clean handed input into a block. Plain text is kept verbatim; --html recovers
     structure + LaTeX (from MathML) + strips fluff via pandoc. Loss is marked in-band.
+    --tag writes ANY key: the vocabulary is the human's, not the tool's.
 
 scribe view topic:nas PILE            # gather every block on a topic (un-moved)
-scribe view state:live PILE           # the current desktop, across topics, recent-first
-scribe toc PILE                       # regenerate the table of contents from tags
+scribe view act:guards-the-edge PILE  # …or on any other key; --recent for newest-first
+scribe toc PILE [--by KEY]            # contents by any key; names its axis and its loss
+scribe keys PILE                      # every key and value in the pile, with counts
 scribe export topic:nas PILE [--bare] # clean export to paste into the next mind
 scribe push VIEW PILE                 # push edits made in a view home, by #id
-scribe tag 50c1 PILE --topic ai       # add/remove tags on a block
-scribe blocks PILE                    # list blocks
+scribe tag 50c1 PILE --tag aspect:manifesting   # add/remove tags on a block
+scribe blocks PILE                    # list blocks with their whole tag run
+scribe stamp PILE [--show]            # put the pile's own reading instructions on top
 scribe check TEXT                     # run the loss-auditor standalone
 scribe doctor                         # disclose the artifact SHA + runtime deps
 ```
 
 Nothing runs on its own; you summon every view by an explicit command. The pile is never
 mutated to produce a view. Edits pushed home are matched deterministically by `#id`.
+
+**Tagging.** scribe stores any `@key:value` and holds no registry — the vocabulary is the pile
+keeper's. The discipline that vocabulary is written in lives in [`tagging/`](tagging/): open
+`tagging/TAGS-bench-sheet.md` while you work, `tagging/TAG-KEYS-reference-v1-DRAFT.md` when you
+want to know why a key exists. One-line version: a tag should carry **a verb and a toward**.
+
+**A pile explains itself.** When `capture --append` creates a pile it writes a short comment
+header at the top — what the format is, which commands search it well, and why a plain `grep`
+returns fragments rather than whole records. Any reader meets it in the file itself, including
+an assistant asked to search a drive; nothing has to be configured or remembered. It is written
+**only at birth** (or by `scribe stamp` on an existing pile), so deleting it keeps it deleted,
+and `--no-stamp` declines it. Every line is a comment in the preamble: block counts, indexes and
+round trips are identical with or without it.
+
+**Exit codes.** `0` clean · `1` refused (nothing was done) · `2` done, with findings to
+disclose. A tag value that would make a header unreadable is refused on write and announced
+on every read; a read never refuses to open a pile, a write-back always refuses to rewrite a
+broken one.
 
 ## Capturing from a chat (edge/)
 
