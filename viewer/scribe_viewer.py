@@ -194,17 +194,26 @@ class ScribeViewer(App):
             log.write("  pushed. the pile is the truth; this tab is a view of it again.")
 
     # ---------------------------------------------------------------- misc
+    # The verbs this shell forwards to frozen scribe, and which of those take the
+    # pile as a TRAILING positional (so it can be auto-appended when the human
+    # omits it, since they are already looking at one pile). Kept as one list
+    # rather than the two disagreeing ones found live 2026-07-31 (#d18f: backlinks
+    # was in one tuple but not the other) — a verb added here belongs in exactly
+    # one place now.
+    _FORWARDED_VERBS = ("blocks", "toc", "export", "check", "tag", "doctor",
+                        "capture", "backlinks", "activate", "converges",
+                        "keys", "stamp", "verify-export")
+    _PILE_TRAILING_VERBS = ("blocks", "toc", "tag", "backlinks", "activate",
+                            "converges", "keys", "stamp", "verify-export", "export")
+
     def _passthrough(self, text: str) -> None:
         """Any other scribe verb, run against this pile. Unknown verbs are answered
         by scribe itself, not by a hand-maintained list here."""
         args = text.split()
         if args and args[0] == "scribe":
             args = args[1:]
-        if args and args[0] in ("blocks", "toc", "export", "check", "tag", "doctor",
-                                "capture", "backlinks"):
-            if args[0] in ("blocks", "toc", "tag", "backlinks") and self.pile not in args:
-                args = args + [self.pile]
-            elif args[0] == "export" and self.pile not in args:
+        if args and args[0] in self._FORWARDED_VERBS:
+            if args[0] in self._PILE_TRAILING_VERBS and self.pile not in args:
                 args = args + [self.pile]
         out, err, _ = run_scribe(args)
         log = self.query_one("#log", RichLog)

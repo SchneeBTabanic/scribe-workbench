@@ -62,6 +62,15 @@ scribe backlinks TARGET PILE [PILE...] # derive every block whose tag VALUE name
     TARGET (the reverse of @ref:/@overrules:/etc.) — TARGET is #id (this pile) or
     pile.txt#id (a named pile, for relations BETWEEN piles); computed fresh, never
     written back — see tagging/TAG-KEYS-reference-v1-DRAFT.md A.9
+scribe activate CONDITION PILE [PILE...] [--key awaits] # every block currently
+    declaring @awaits:CONDITION (or --key), across any piles named — the query
+    half of a dpkg-trigger-style interest/activate pair; read-only, never promotes
+scribe verify-export EXPORTED selector PILE [--recent] # has the pile drifted
+    since EXPORTED was written? Reports MATCH/DRIFT/NO MANIFEST only, never
+    repairs — see the content:sha256: fingerprint every non-bare export now carries
+scribe converges PILE PILE [...] [--by KEY] [--no-cites] # candidate DNA shared
+    between DIFFERENT piles never explicitly cross-referenced: shared tag-values
+    and shared Charter-clause citations. Disclosed candidates only, never merged
 scribe stamp PILE [--show]            # put the pile's own reading instructions on top
 scribe check TEXT                     # run the loss-auditor standalone
 scribe doctor                         # disclose the artifact SHA + runtime deps
@@ -97,7 +106,7 @@ core never depends on it. See `edge/README.md`.
 
 ## Freeze
 
-v1.1.2 current (additive over v1.0-frozen; frozen-ness was ruled to never be a reason
+v1.2.0 current (additive over v1.0-frozen; frozen-ness was ruled to never be a reason
 not to correct the tool — see `PROVENANCE.md`'s v1.1.0 entry). Stdlib-only,
 offline-rebuildable. Verify with `scribe doctor`. License **AGPL-3.0-or-later**.
 

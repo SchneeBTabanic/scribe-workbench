@@ -498,3 +498,58 @@ were checked and are NOT adopted: they need a registry, which this sheet's whole
 itself names the relation) already gets the same benefit without one. Full writeup:
 `RIPE-LEDGER.txt` `#a4c1`; provenance: `PROVENANCE.md` v1.1.2.
 
+## A.10 — Two fresh Debian passes, three builds: `activate`, `verify-export`, `converges` (2026-07-31)
+
+**Not a re-reading of A.1–A.9.** Two agent-run research passes went to real, locally-installed
+Debian/apt/dpkg source material this sheet's own prior harvests never opened (`man apt-cache`,
+`man deb-triggers`, `man update-alternatives`, `man apt_preferences`, lintian's actual Perl check
+source) — corrected the standing assumption that Debian's PACKAGING-PROCESS documents (Policy,
+dev-reference, maint-guide, lintian's tag *explanations*) were the whole of "prior art here";
+they never touched the installed-system RELATIONAL layer at all.
+
+**`@awaits:`/`@dissolves:` already had a real analogue this sheet never named: dpkg triggers.**
+A package declares `interest`; any package `activate`s it; dpkg computes the notification
+fan-out on demand — *"a facility that allows events... to be recorded and aggregated, and
+processed later by the interested package"* (dpkg's `triggers.txt`). This sheet's `@awaits:`
+already IS the `interest` declaration (A.1's own words: *"the block literally reaches toward
+its own ratification"*); the `activate` query — given a condition, who currently awaits it —
+was simply never built. **Built:** `scribe activate <condition> PILE [PILE...] [--key awaits]`,
+read-only, same discipline as `backlinks`.
+
+**The joiner-method's stale-view problem, and Knuth's own fix already on this sheet.** A1's
+`@quoting:` entry already cites Knuth's WEB change-file — *"ships a checksum, not the
+strings"* — as the fix for a pointer that cannot silently decay. The identical problem exists
+one level up: a whole DERIVED VIEW (an exported file, a tangled code artifact) can go stale
+under the pile that fed it, with nothing to detect it. **Built:** `content_fingerprint` (sha256-8
+over sorted id+body pairs, joiner/order-independent) stamped into every non-bare export's
+manifest, and `scribe verify-export` to check MATCH/DRIFT against the current pile — never
+repairs (§3.10).
+
+**The Debian corpus, checked precisely for a reverse-relation vocabulary Debian does NOT have:**
+`Enhances` (declared mirror of `Suggests`, hand-authored on the enhancing side, never
+computed) and `Conflicts` symmetry (Policy only *recommends*, dpkg never enforces or
+auto-populates the missing side) are real counter-examples confirming most of Debian's
+package-to-package relations are DECLARED, not derived — `apt-cache rdepends`/`showpkg` and
+`dpkg-query -S` are the derived exceptions, and this sheet's `@ref:` family already has its
+own derived reverse (`backlinks`, A.9). Nothing further to add there.
+
+**Design Charter §3.15, read fresh rather than assumed, named the harder gap directly.**
+§3.15 is explicitly OPEN: *"a tag nothing ever queries is never found wrong... an absent
+relation cannot be searched for."* The 2026-07-30 ruling closed only ONE shape (a stateless
+model reconnecting to its own turn record, GTPS-Agent's `fold.py`); the founding example
+itself — convergence between *separate projects* sharing a philosophy, never made explicit by
+a pointer tag — was named as still unanswered. Debian's own vocabulary offered nothing to
+borrow here (its relations are all package-to-package, never project-to-project), so this is
+built from first principles, kept deliberately structural rather than semantic: **Built:**
+`scribe converges PILE PILE [...]` — `compute_convergences` (shared literal tag-VALUES across
+2+ distinct piles, excluding pointer-shaped values already covered by `backlinks`) and
+`compute_citation_convergences` (shared `§N.N`/`Clause N` citation substrings in body text
+across 2+ piles). Every finding is a disclosed CANDIDATE, never an assertion — deliberately
+NOT semantic/ML similarity, which would be exactly the borrowed-word hazard §3.6 already
+warns against (importing an embedding's authority while implementing none of its content) and
+would let a representation "acquire causal authority merely because it represents" (§3.3's
+general form). This is a first reach at §3.15, not a closure of it — whether the Charter's own
+text should now record this attempt is a ruling left to the sovereign, named rather than
+silently done. Full writeup: `RIPE-LEDGER.txt` (this session's entry); provenance:
+`PROVENANCE.md` v1.2.0.
+

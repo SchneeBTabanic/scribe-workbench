@@ -358,6 +358,240 @@ class TestBacklinks(unittest.TestCase):
         self.assertIn("REFUSED", buf_err.getvalue())
 
 
+AWAITS_PILE = (
+    "@@ #a1 2026-01-01T00:00 @awaits:the-sovereigns-ruling @source:s\n"
+    "pile A's own pod, awaiting a ruling.\n\n"
+    "@@ #a2 2026-01-01T00:01 @dissolves:the-fix-lands @source:s\n"
+    "pile A's own retirement condition.\n"
+)
+AWAITS_PILE_B = (
+    "@@ #b1 2026-01-02T00:00 @awaits:the-sovereigns-ruling @source:s\n"
+    "pile B independently awaits the SAME ruling.\n\n"
+    "@@ #b2 2026-01-02T00:01 @awaits:something-else @source:s\n"
+    "pile B awaits a DIFFERENT condition.\n"
+)
+
+
+class TestActivate(unittest.TestCase):
+    """v1.2.0 — the other half of a dpkg trigger. `@awaits:`/`@dissolves:` are
+    already this project's `interest` declarations; this is the missing
+    on-demand `activate` query: given a condition, who currently awaits it,
+    across any piles named. Read-only, never promotes (the human rules every
+    promotion, always)."""
+
+    def setUp(self):
+        self.a = scribe.parse_pile(AWAITS_PILE)
+        self.b = scribe.parse_pile(AWAITS_PILE_B)
+
+    def test_finds_current_waiters_across_piles(self):
+        hits = scribe.compute_activations(
+            {"pileA.txt": self.a, "pileB.txt": self.b}, "the-sovereigns-ruling")
+        self.assertEqual(len(hits), 2)
+        ids = sorted(bid for _, bid, _, _, _ in hits)
+        self.assertEqual(ids, ["a1", "b1"])
+
+    def test_absence_is_named_not_silent(self):
+        """§3.8 — nobody awaiting a condition must say so, not return nothing."""
+        hits = scribe.compute_activations({"pileA.txt": self.a}, "no-such-condition")
+        out = scribe.render_activate("no-such-condition", hits)
+        self.assertEqual(out, "(nothing is @awaits:no-such-condition)\n")
+
+    def test_exact_match_only_not_substring(self):
+        """Structural exactness, same discipline as compute_backlinks: a
+        condition string that is only a SUBSTRING of a real value must not
+        match — no fuzzy/partial matching."""
+        hits = scribe.compute_activations({"pileA.txt": self.a}, "sovereigns")
+        self.assertEqual(hits, [])
+
+    def test_key_is_choosable_not_hardwired(self):
+        """@dissolves: is the other witness-shaped key in this vocabulary
+        (the death-condition mirror of @awaits:, per the tag reference) —
+        the axis must be choosable, same ruling as toc --by."""
+        hits = scribe.compute_activations({"pileA.txt": self.a}, "the-fix-lands",
+                                          key="dissolves")
+        self.assertEqual([bid for _, bid, _, _, _ in hits], ["a2"])
+
+    def test_cli_reports_across_named_piles(self):
+        import contextlib
+        import io
+        import os
+        import tempfile
+        d = tempfile.mkdtemp()
+        pa, pb = os.path.join(d, "pileA.txt"), os.path.join(d, "pileB.txt")
+        with open(pa, "w") as f:
+            f.write(AWAITS_PILE)
+        with open(pb, "w") as f:
+            f.write(AWAITS_PILE_B)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = scribe.cmd_activate(_Args(condition="the-sovereigns-ruling",
+                                           pile=[pa, pb], key="awaits"))
+        self.assertEqual(rc, 0)
+        out = buf.getvalue()
+        self.assertIn("pileA.txt#a1", out)
+        self.assertIn("pileB.txt#b1", out)
+
+
+CONVERGE_PILE_A = (
+    "@@ #a1 2026-01-01T00:00 @act:guard-against-drift @path:toward-sovereignty "
+    "@source:s\nProject A's own take, citing Section 3.8 in prose but not the sigil.\n\n"
+    "@@ #a2 2026-01-01T00:01 @ref:#a1 @swatch:#deadbeef @source:s\n"
+    "Cites the Charter directly: see §3.8 and also Clause 47.\n"
+)
+CONVERGE_PILE_B = (
+    "@@ #b1 2026-01-02T00:00 @act:guard-against-drift @source:s\n"
+    "Project B converged on the identical act verb, independently. §3.8 again.\n\n"
+    "@@ #b2 2026-01-02T00:01 @topic:git @source:s\n"
+    "Unrelated to A entirely.\n"
+)
+
+
+class TestConverges(unittest.TestCase):
+    """v1.2.0 — a first structural attempt at Design Charter §3.15's still-open
+    founding gap: convergence between DIFFERENT piles that was never made
+    explicit by a pointer tag. Deliberately NOT semantic/ML similarity (§3.6's
+    "borrowing a word" hazard) -- every finding is a LITERAL tag-value or
+    citation-substring match, disclosed as a candidate only, never asserted."""
+
+    def setUp(self):
+        self.piles = {"pileA.txt": scribe.parse_pile(CONVERGE_PILE_A),
+                      "pileB.txt": scribe.parse_pile(CONVERGE_PILE_B)}
+
+    def test_shared_tag_value_across_two_piles_found(self):
+        groups = scribe.compute_convergences(self.piles)
+        self.assertIn(("act", "guard-against-drift"), groups)
+        hits = groups[("act", "guard-against-drift")]
+        self.assertEqual({p for p, _, _ in hits}, {"pileA.txt", "pileB.txt"})
+
+    def test_value_used_only_within_one_pile_is_not_reported(self):
+        """@path:toward-sovereignty only appears in pile A -- not a cross-pile
+        convergence, so it must not appear in the groups at all."""
+        groups = scribe.compute_convergences(self.piles)
+        self.assertNotIn(("path", "toward-sovereignty"), groups)
+
+    def test_pointer_shaped_values_are_excluded(self):
+        """A value shaped like a pointer (contains '#') is already
+        compute_backlinks's job -- converges must not double-report it."""
+        groups = scribe.compute_convergences(self.piles)
+        for (k, v) in groups:
+            self.assertNotIn("#", v)
+
+    def test_by_key_restricts_the_scan(self):
+        groups = scribe.compute_convergences(self.piles, tag_key="act")
+        self.assertEqual(set(groups), {("act", "guard-against-drift")})
+
+    def test_citation_convergence_found_across_piles(self):
+        groups = scribe.compute_citation_convergences(self.piles)
+        self.assertIn("§3.8", groups)
+        self.assertEqual({p for p, _, _ in groups["§3.8"]},
+                         {"pileA.txt", "pileB.txt"})
+
+    def test_citation_only_in_one_pile_is_not_reported(self):
+        """Clause 47 is cited only in pile A (once) -- not cross-pile, must
+        not appear even though it is a real, well-formed citation."""
+        groups = scribe.compute_citation_convergences(self.piles)
+        self.assertNotIn("Clause 47", groups)
+
+    def test_render_names_absence_in_both_sections(self):
+        """§3.8 -- an empty finding set must say so, in both sections, not
+        just vanish silently."""
+        out = scribe.render_convergences({}, {})
+        self.assertIn("(none found)", out)
+        self.assertEqual(out.count("(none found)"), 2)
+
+    def test_render_discloses_which_piles_and_ids(self):
+        groups = scribe.compute_convergences(self.piles, tag_key="act")
+        out = scribe.render_convergences(groups, {})
+        self.assertIn("@act:guard-against-drift", out)
+        self.assertIn("pileA.txt#a1", out)
+        self.assertIn("pileB.txt#b1", out)
+        self.assertIn("never asserted", out)   # the disclosure discipline itself
+
+
+class TestExportVerify(unittest.TestCase):
+    """v1.2.0 -- the joiner-method's missing half: does a saved/derived view
+    match the pile it was extracted from, right now? Never repairs -- MATCH
+    or DRIFT only (§3.10)."""
+
+    def setUp(self):
+        self.blocks = scribe.parse_pile(PILE)
+
+    def test_export_manifest_carries_a_fingerprint(self):
+        text, _ = scribe.render_export(self.blocks, "topic", "nas")
+        self.assertIn("content:sha256:", text)
+
+    def test_bare_export_carries_no_manifest_to_verify(self):
+        text, _ = scribe.render_export(self.blocks, "topic", "nas", bare=True)
+        self.assertIsNone(scribe.find_export_manifest(text))
+
+    def test_fingerprint_is_independent_of_order(self):
+        """Same blocks, different presentation order (arrival vs --recent):
+        the fingerprint is an identity-and-content check, not a text hash, so
+        it must not depend on the joiner or the chosen order."""
+        chosen_a = scribe.order_blocks(
+            scribe.select_blocks(self.blocks, "topic", "nas"), recent=False)
+        chosen_b = scribe.order_blocks(
+            scribe.select_blocks(self.blocks, "topic", "nas"), recent=True)
+        self.assertEqual(scribe.content_fingerprint(chosen_a),
+                         scribe.content_fingerprint(chosen_b))
+
+    def test_verify_export_reports_match_when_pile_is_unchanged(self):
+        text, _ = scribe.render_export(self.blocks, "topic", "nas")
+        manifest = scribe.find_export_manifest(text)
+        out = scribe.render_verify_export(manifest, self.blocks, "topic", "nas")
+        self.assertTrue(out.startswith("MATCH"))
+
+    def test_verify_export_reports_drift_and_names_what_changed(self):
+        text, _ = scribe.render_export(self.blocks, "topic", "nas")
+        manifest = scribe.find_export_manifest(text)
+        edited = scribe.parse_pile(PILE)
+        for b in edited:
+            if b.id == "n1":
+                b.body = b.body + " EDITED AFTER EXPORT."
+        out = scribe.render_verify_export(manifest, edited, "topic", "nas")
+        self.assertTrue(out.startswith("DRIFT"))
+        self.assertIn("body content changed", out)
+
+    def test_verify_export_names_added_and_removed_ids(self):
+        text, _ = scribe.render_export(self.blocks, "topic", "nas")
+        manifest = scribe.find_export_manifest(text)
+        retagged = scribe.parse_pile(PILE)
+        scribe.add_tags(retagged, "n1", remove=[])
+        retagged = [b for b in retagged if b.id != "n1"]   # n1 no longer matches
+        out = scribe.render_verify_export(manifest, retagged, "topic", "nas")
+        self.assertTrue(out.startswith("DRIFT"))
+        self.assertIn("no longer matches", out)
+        self.assertIn("#n1", out)
+
+    def test_no_manifest_is_named_not_mistaken_for_a_match(self):
+        out = scribe.render_verify_export(None, self.blocks, "topic", "nas")
+        self.assertTrue(out.startswith("NO MANIFEST"))
+
+    def test_cli_verify_export_round_trip(self):
+        import contextlib
+        import io
+        import os
+        import tempfile
+        d = tempfile.mkdtemp()
+        pile_path = os.path.join(d, "p.txt")
+        with open(pile_path, "w") as f:
+            f.write(PILE)
+        export_path = os.path.join(d, "export.txt")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            scribe.cmd_export(_Args(pile=pile_path, selector="topic:nas",
+                                    recent=False, bare=False, joiner=None))
+        with open(export_path, "w") as f:
+            f.write(buf.getvalue())
+        buf2 = io.StringIO()
+        with contextlib.redirect_stdout(buf2):
+            rc = scribe.cmd_verify_export(_Args(exported=export_path,
+                                                selector="topic:nas",
+                                                pile=pile_path, recent=False))
+        self.assertEqual(rc, 0)
+        self.assertTrue(buf2.getvalue().startswith("MATCH"))
+
+
 class TestPushHome(unittest.TestCase):
     def test_edit_in_view_lands_in_right_block(self):
         """A thought developed in a view is pushed home to the right canonical block

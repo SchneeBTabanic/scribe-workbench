@@ -27,9 +27,13 @@ from textual.widgets import Input, RichLog, TabbedContent, TabPane, TextArea  # 
 # the bottom of this file can never again say a stale count -- found live
 # 2026-07-31: it said "(9 verbs)" after a 10th (backlinks) had been added to
 # the checked tuple, the exact silent-drift shape this project's tests exist
-# to refuse elsewhere.
-_SCRIBE_VERBS = ("capture", "check", "blocks", "view", "toc", "export",
-                "push", "tag", "doctor", "backlinks")
+# to refuse elsewhere. Same day, later: "keys" and "stamp" were ALSO already
+# missing from this tuple (a second, quieter instance of the identical drift,
+# never caught because the assertion only checks presence, not completeness)
+# -- fixed here alongside adding the three v1.2.0 verbs.
+_SCRIBE_VERBS = ("capture", "check", "blocks", "view", "toc", "keys", "export",
+                "verify-export", "push", "tag", "stamp", "doctor", "backlinks",
+                "activate", "converges")
 
 PILE = """@@ #a1b2 2026-07-26T14:00:00 @topic:probe @state:live
 First block, on the probe topic.

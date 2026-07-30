@@ -55,12 +55,19 @@ sheet into two families, and nothing else determines which family a key is in:
 | kind | value shape | what it can do |
 |---|---|---|
 | **grouping key** | a **small, closed** list of values — `@aspect:`, `@because:`, `@kept:` | makes a real view: `scribe view aspect:prospective pile.txt` pulls together every block that shares that value, whole |
-| **witness key** | free text, different on every block — `@awaits:`, `@rejected:`, `@dissolves:` | read **in place**, on the block where it sits; it can never gather blocks into a view, and that is fine — that was never its job |
+| **witness key** | free text, different on every block — `@awaits:`, `@rejected:`, `@dissolves:` | read **in place**, on the block where it sits; it can never gather blocks into a `toc`/`view` grouping, and that is fine — that was never its job |
 
 So when you invent a new tag, the first question is not "what should I call it" — it's **which
 kind is this**. A closed, short value-list earns you a view forever. A free-text value earns you a
-note you'll be glad to find later, but never a view. Neither is better; picking the wrong one for
-what you actually wanted is the only mistake here.
+note you'll be glad to find later, but never a `toc`/`view` grouping. Neither is better; picking
+the wrong one for what you actually wanted is the only mistake here.
+
+**One narrower exception, added v1.2.0:** a witness key still can't make a *grouping* view (it has
+no small closed set of values to group by), but `@awaits:`/`@dissolves:` specifically can now be
+*queried by exact value*: `scribe activate <the-exact-condition-string> pile.txt` finds every block
+currently carrying that precise `@awaits:`/`@dissolves:` value, across any piles you name. It is an
+exact-match lookup, not a grouping view — you still have to know (or copy) the condition string
+verbatim, unlike a grouping key's small closed vocabulary you can browse.
 
 **None of this is hard-wired into scribe itself** — `scribe.py` accepts any `@key:value`, no
 registry, no key list in the code (confirmed: `TAG_RE = @([^\s:]+):(\S+)`, matches anything).

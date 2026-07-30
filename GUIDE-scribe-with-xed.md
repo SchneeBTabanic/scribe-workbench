@@ -311,6 +311,57 @@ scribe backlinks 'work.txt#c98b' work.txt personal.txt
 Any tag value shaped `#id` or `otherpile.txt#id` counts, on any key — there's no fixed list of
 "relational" keys to remember; if a value names a real block id, `backlinks` finds it.
 
+**`scribe activate` (v1.2.0) — "who is currently waiting on this?"** If you use `@awaits:` to
+mark a block as blocked on some condition (the way `RIPE-LEDGER.txt` does), this answers "which
+blocks, right now, are waiting on exactly this" without you having to eyeball a `toc --by awaits`
+grouping by hand:
+
+```bash
+scribe activate the-sovereigns-ruling pile.txt
+#   What is @awaits:the-sovereigns-ruling (1):
+#     pile.txt#a2 (2026-01-01T00:01)
+```
+
+It never edits anything — you still resolve the block yourself with `scribe tag`, once you've
+acted on what was waiting. `--key dissolves` asks the same question of `@dissolves:` (a block's
+own named retirement condition) instead.
+
+**`scribe verify-export` (v1.2.0) — "has the pile moved since I saved this?"** Every non-bare
+`export` now stamps its trailing manifest with a content fingerprint. If you keep an exported
+view around — pasted into another tool, or tangled into a running file — this tells you whether
+the pile it came from has since changed underneath it:
+
+```bash
+scribe export topic:nas pile.txt > nas.export.txt
+# ... later, after editing pile.txt ...
+scribe verify-export nas.export.txt topic:nas pile.txt
+#   DRIFT — topic:nas has changed in the pile since export: was content:sha256:86829acf,
+#   now content:sha256:0fae1347.
+#     same 1 block(s) by id — body content changed
+#     the exported file is stale; re-run `scribe export` to refresh it.
+```
+
+It never re-exports or repairs anything for you — MATCH, DRIFT, or NO MANIFEST (if the file was
+exported `--bare`) is all it reports.
+
+**`scribe converges` (v1.2.0) — "does this pile share DNA with a different one?"** If you keep
+more than one pile — one per project — this looks for blocks in DIFFERENT piles that share a
+literal tag value or a literal Charter-clause-shaped citation, without either side ever having
+written a pointer to the other:
+
+```bash
+scribe converges projectA.txt projectB.txt
+#   ## Shared tag-values across different piles (1)
+#     @act:guard-against-drift  — 2 block(s) across 2 pile(s): projectA.txt, projectB.txt
+#       projectA.txt#a1 (...)
+#       projectB.txt#b1 (...)
+```
+
+Every line is a candidate to go READ, never an asserted relation — nothing here is merged or
+written back, and a shared value can be a real convergence or just a coincidence; that judgment
+stays yours. `--by act` (or any key) narrows the scan to one key; `--no-cites` skips the
+citation half if you only want the tag-value scan.
+
 **Your pile explains itself to whoever opens it.** A pile created from v1.1.0 onward starts with
 a short comment header saying what the format is, which commands search it properly, and why a
 plain `grep` over it hands back fragments — a body line with no id or tags, or a header with no

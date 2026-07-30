@@ -1,6 +1,66 @@
 # PROVENANCE — Scribe's Workbench
 
-## v1.1.2 — "derive the reverse" (2026-07-31) — CURRENT
+## v1.2.0 — "the other half of a trigger, a checksum for a view, a first reach at §3.15" (2026-07-31) — CURRENT
+
+A named new version, not a silent edit (§5.8). Additive only; v1.1.2 below is unchanged.
+
+| File | Role | SHA-256 |
+|---|---|---|
+| `scribe.py` | frozen core | `0a640fdef615508a107180f36861f4c6ec5d0e4208975f09b6050ffe2035fa25` |
+| `test_scribe.py` | core tests (82) | `85c6599da6e229b0b8a9afe558ca45c41e05c109eff98c83b126d3516c84efdb` |
+
+**What changed, and why — three builds from one session's fresh research, each answering a
+gap named against real prior art rather than invented.**
+
+1. **`scribe activate <condition> PILE [PILE...] [--key awaits]`.** Fresh research into
+   dpkg's trigger mechanism (`man deb-triggers`, dpkg's `triggers.txt` spec — not a re-reading
+   of this project's own prior ledger) found the one true computed-fan-out pub-sub mechanism
+   in the whole Debian ecosystem: a package declares `interest` in a named trigger, any
+   package `activate`s it, and dpkg computes on demand every currently-interested package —
+   *"a facility that allows events caused by one package but of interest to another package
+   to be recorded and aggregated, and processed later by the interested package."* This
+   project already had the DECLARE half (`@awaits:`, live throughout `RIPE-LEDGER.txt`) and a
+   coarse, hardcoded NOTIFY half (the SessionStart hook's `scribe view aspect:prospective`,
+   one fixed value) — but no general on-demand query. `compute_activations`/`render_activate`
+   close it: read-only, same discipline as `backlinks`, and it does not promote anything —
+   "`@awaits` is a witness, never a promoter... the human rules every promotion, always"
+   (`tagging/TAG-KEYS-reference-v1-DRAFT.md`) still holds.
+2. **`scribe verify-export EXPORTED_FILE selector PILE`**, backed by `content_fingerprint`
+   (a sha256-8 over sorted `(id, body)` pairs, order/joiner-independent) stamped into every
+   non-bare `export`'s manifest. Closes a real hole in the "joiner method" architecture: a
+   derived view (a running code file, a saved export) had no way to disclose whether the pile
+   it came from had since moved underneath it. The building block was already named in this
+   project's own vocabulary — Knuth's WEB change-file *"ships a checksum, not the strings"*
+   (`tagging/TAG-KEYS-reference-v1-DRAFT.md`, A.1, `@quoting:`) — just never wired into
+   `export`. Reports `MATCH`/`DRIFT`/`NO MANIFEST` only; never repairs, never re-exports
+   (§3.10 — staleness is reported, not silently fixed).
+3. **`scribe converges PILE PILE [...] [--by KEY] [--no-cites]`.** A first concrete attempt
+   at Design Charter §3.15's still-open founding gap: *"a tag nothing ever queries is never
+   found wrong... an absent relation cannot be searched for."* The 2026-07-30 ruling closed
+   only the stateless-model-reconnecting-to-its-own-record shape of that gap (GTPS-Agent's
+   `fold.py`); the shape named in the Charter's own founding example — convergence between
+   separate projects that share a philosophy but were never explicitly cross-referenced by a
+   pointer tag — was left open. `compute_convergences` (shared literal tag-values across 2+
+   distinct piles, excluding pointer-shaped values already covered by `backlinks`) and
+   `compute_citation_convergences` (shared Charter-clause-shaped citations, `§N.N` / `Clause
+   N`, in body text across 2+ piles) surface these as disclosed candidates only — never
+   asserted as real relations, never merged, never written back (§3.3: geometry may witness,
+   never govern; §3.6: no borrowed-word semantic/ML similarity scoring — every match here is
+   a literal string, not an embedding). This replaces, for the shapes it covers, the fragile
+   hand-maintained "Cross-repo edges" section of `namirha-memory-matrix.md`, which worked only
+   as long as a session happened to notice and write it down.
+
+**Test attestation at v1.2.0:** 82 core tests pass (61 + 21 new: 5 for `activate`, 8 for
+`converges`, 8 for `verify-export`/the fingerprint). Toolchain unchanged.
+
+**Not yet done, named rather than silently skipped:** whether Design Charter §3.15's own text
+should be amended to record this as the first answer to its founding gap is a ruling for the
+sovereign, not a decision this build made unilaterally — the mechanism is built and tested;
+the Charter's own wording is untouched pending that ruling.
+
+---
+
+## v1.1.2 — "derive the reverse" (2026-07-31)
 
 A named new version, not a silent edit (§5.8). Additive only; v1.1.1 below is unchanged.
 

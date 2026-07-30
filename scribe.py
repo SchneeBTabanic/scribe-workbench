@@ -46,7 +46,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 
-VERSION = "1.1.2"
+VERSION = "1.2.0"
 
 # The one external process the HTML path shells to. Recorded for provenance (§4.4); the
 # tool discloses the running pandoc via `scribe doctor` and hard-fails if it is absent.
@@ -699,6 +699,153 @@ def render_backlinks(target_pile, target_id, back, same_pile_label=None):
     return "\n".join(lines) + "\n"
 
 
+# ---------------------------------------------------------------------------
+# Activate (v1.2.0) — a DERIVED report over witness-style tag values (the
+# other half of a dpkg trigger: `interest` is @awaits:/@dissolves:, already in
+# this pile's vocabulary; `activate` was never built).
+# ---------------------------------------------------------------------------
+# Built 2026-07-31, from fresh research into dpkg's trigger mechanism (not a
+# re-reading of this project's own prior ledger): a package declares INTEREST
+# in a named trigger; any package ACTIVATES it; dpkg computes, on demand,
+# every currently-interested package for that name — "a facility that allows
+# events caused by one package but of interest to another package to be
+# recorded and aggregated, and processed later by the interested package...
+# reduces duplication of processing" (dpkg's triggers.txt spec). This project
+# already had the DECLARE half (`@awaits:<condition>`, used throughout
+# RIPE-LEDGER.txt) and a coarse, hardcoded NOTIFY half (the SessionStart
+# hook's `scribe view aspect:prospective`, one fixed value). Missing: the
+# general on-demand query — given any condition string, who is currently
+# awaiting it, across any piles named, not just one hardcoded value. Read-only
+# by construction, same as backlinks: this NEVER promotes a block. "@awaits is
+# a witness, never a promoter... the human rules every promotion, always"
+# (tagging/TAG-KEYS-reference-v1-DRAFT.md) still holds — this command only
+# removes the eyeball-matching step of finding who is currently waiting.
+
+def compute_activations(piles, condition, key="awaits"):
+    """`piles` is {path: [Block, ...]}. Returns [(pile_path, id, ts, key, value)]
+    for every block whose tag KEY carries VALUE == condition, across all given
+    piles, in arrival order within each pile. Exact match only — structural,
+    not fuzzy, same discipline as compute_backlinks's id-matching."""
+    hits = []
+    for p, blocks in piles.items():
+        for b in blocks:
+            if not b.id:
+                continue
+            for k, v in b.tags:
+                if k == key and v == condition:
+                    hits.append((p, b.id, b.ts, k, v))
+    return hits
+
+
+def render_activate(condition, hits, key="awaits"):
+    """Report every current waiter on `condition`. Absence is named, not
+    silent (§3.8) — same shape as render_backlinks's own empty case."""
+    if not hits:
+        return f"(nothing is @{key}:{condition})\n"
+    lines = [f"What is @{key}:{condition} ({len(hits)}):"]
+    for p, bid, ts, k, v in hits:
+        lines.append(f"  {os.path.basename(p)}#{bid} ({ts})")
+    return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Converges (v1.2.0) — a DERIVED, DISCLOSED report of candidate convergence
+# between DIFFERENT piles (different projects) that were never explicitly
+# cross-referenced by a pointer tag. First concrete attempt at Design Charter
+# §3.15's still-open founding gap: "a tag nothing ever queries is never found
+# wrong... an absent relation cannot be searched for." The 2026-07-30 ruling
+# closed only the stateless-model-reconnecting-to-its-own-record shape of
+# that gap (GTPS-Agent's fold.py); this is the OTHER shape it explicitly left
+# open — separate projects converging on the same philosophy without either
+# side ever writing an @ref: to the other.
+#
+# Deliberately NOT semantic/ML similarity (that would be §3.6's "borrowing a
+# word" — importing an embedding model's authority while delivering none of
+# its content — and would let a representation "acquire causal authority
+# merely because it represents," §3.3's general form). Every finding here is
+# a LITERAL match: identical tag VALUES, or identical Charter-clause-shaped
+# citation substrings, appearing on blocks in two or more DISTINCT piles.
+# Structural, deterministic, disclosed as a contestable candidate only —
+# never asserted as a real relation, never merged, never written back.
+# ---------------------------------------------------------------------------
+
+CITATION_RE = re.compile(r"§\d+(?:\.\d+)*|Clause \d+")
+
+
+def compute_convergences(piles, tag_key=None):
+    """Groups (key, value) -> [(pile, id, ts), ...] across ALL given piles,
+    keeping only groups that touch 2+ DISTINCT piles. Pointer-shaped values
+    (containing '#') are excluded — those are explicit relations already
+    covered by compute_backlinks; this function is only for the IMPLICIT
+    convergence of two blocks that share a value without either pointing at
+    the other."""
+    groups = {}
+    for p, blocks in piles.items():
+        for b in blocks:
+            if not b.id:
+                continue
+            for k, v in b.tags:
+                if tag_key and k != tag_key:
+                    continue
+                if "#" in v:
+                    continue
+                groups.setdefault((k, v), []).append((p, b.id, b.ts))
+    return {kv: hits for kv, hits in groups.items()
+            if len({p for p, _, _ in hits}) >= 2}
+
+
+def compute_citation_convergences(piles):
+    """Groups literal Charter-clause-shaped citations (§N.N or Clause N) found
+    in block BODY text -> [(pile, id, ts), ...], keeping only groups that
+    touch 2+ distinct piles. A citation substring match is not proof of a
+    real relation (a quoted excerpt could contain one incidentally) — it is a
+    candidate for a human to read, same disclosure-only footing as every
+    other finding here (§3.3: witness, never govern)."""
+    groups = {}
+    for p, blocks in piles.items():
+        for b in blocks:
+            if not b.id:
+                continue
+            for cite in set(CITATION_RE.findall(b.body)):
+                groups.setdefault(cite, []).append((p, b.id, b.ts))
+    return {cite: hits for cite, hits in groups.items()
+            if len({p for p, _, _ in hits}) >= 2}
+
+
+def render_convergences(tag_groups, citation_groups):
+    """Disclosed candidates only — every line names what was matched and
+    where, so a human can go read the two blocks and judge whether the
+    convergence is real (§3.3/§3.8). Absence is named, not silent."""
+    lines = []
+    lines.append(f"# Candidate convergences — LITERAL matches only, never "
+                 f"asserted as real relations. Read each pair; nothing here "
+                 f"was merged or written back.")
+    lines.append("")
+    lines.append(f"## Shared tag-values across different piles ({len(tag_groups)})")
+    if not tag_groups:
+        lines.append("(none found)")
+    for (k, v), hits in sorted(tag_groups.items(),
+                               key=lambda kv: (-len(kv[1]), kv[0])):
+        piles_touched = sorted({os.path.basename(p) for p, _, _ in hits})
+        lines.append(f"  @{k}:{v}  — {len(hits)} block(s) across "
+                     f"{len(piles_touched)} pile(s): {', '.join(piles_touched)}")
+        for p, bid, ts in hits:
+            lines.append(f"    {os.path.basename(p)}#{bid} ({ts})")
+    lines.append("")
+    lines.append(f"## Shared Charter-clause citations across different piles "
+                 f"({len(citation_groups)})")
+    if not citation_groups:
+        lines.append("(none found)")
+    for cite, hits in sorted(citation_groups.items(),
+                             key=lambda kv: (-len(kv[1]), kv[0])):
+        piles_touched = sorted({os.path.basename(p) for p, _, _ in hits})
+        lines.append(f"  {cite}  — cited in {len(hits)} block(s) across "
+                     f"{len(piles_touched)} pile(s): {', '.join(piles_touched)}")
+        for p, bid, ts in hits:
+            lines.append(f"    {os.path.basename(p)}#{bid} ({ts})")
+    return "\n".join(lines) + "\n"
+
+
 def block_title(b, width=66):
     """First non-empty body line, minus any leading Markdown heading marker and any
     loss-marker line — a derived label for the TOC. Extraction, not interpretation."""
@@ -800,6 +947,23 @@ def render_toc(blocks, key="topic"):
 DEFAULT_JOINER = "\n\n---\n\n"
 
 
+def content_fingerprint(blocks):
+    """A sha256-8 fingerprint of exactly which blocks, with what content, fed a
+    derived view — independent of joiner/order choice, so it fingerprints
+    IDENTITY-AND-CONTENT, not the rendered text. This is the joiner-method's
+    missing half: `render_export`'s manifest always named which `#id`s fed a
+    view, but never whether their CONTENT has since moved — so a saved/running
+    derived artifact could go stale under the pile with nothing to detect it.
+    Same principle Knuth's WEB change-file already uses for its string pool —
+    "ships a checksum, not the strings" (tagging/TAG-KEYS-reference-v1-DRAFT.md,
+    A.1, `@quoting:`) — applied here to a whole derived view instead of one
+    quoted block."""
+    h = hashlib.sha256()
+    for b in sorted(blocks, key=lambda b: b.id):
+        h.update(f"{b.id}\x00{b.body}".encode("utf-8"))
+    return h.hexdigest()[:8]
+
+
 def render_export(blocks, key, value, recent=False, bare=False, joiner=None):
     """A clean export to paste into the next mind: bodies only, no `@@` headers to
     scroll-and-delete. Back-links survive as an unobtrusive trailing manifest unless
@@ -809,14 +973,67 @@ def render_export(blocks, key, value, recent=False, bare=False, joiner=None):
     default `---` separator is prose punctuation, and a bare literal `---` line is a
     Python SyntaxError, so bodies meant to tangle into one runnable file need a
     different join (e.g. a blank line) than bodies meant to be read as prose. Scribe
-    does not decide what a body IS — it only offers the join a code export needs."""
+    does not decide what a body IS — it only offers the join a code export needs.
+
+    The manifest also carries a content fingerprint (v1.2.0) so a later
+    `scribe verify-export` can tell whether the pile has drifted underneath
+    this saved view since it was extracted — see `content_fingerprint`."""
     chosen = order_blocks(select_blocks(blocks, key, value), recent=recent)
     parts = [b.body for b in chosen]
     out = (joiner if joiner is not None else DEFAULT_JOINER).join(parts)
     if not bare and chosen:
         manifest = " ".join(f"#{b.id}" for b in chosen)
-        out += f"\n\n<!-- scribe export of {key}:{value} — source blocks: {manifest} -->"
+        fp = content_fingerprint(chosen)
+        out += (f"\n\n<!-- scribe export of {key}:{value} — source blocks: "
+               f"{manifest} — content:sha256:{fp} -->")
     return out + "\n", chosen
+
+
+EXPORT_MANIFEST_RE = re.compile(
+    r"<!-- scribe export of \S+ — source blocks: (?P<ids>[^—]*)"
+    r"— content:sha256:(?P<fp>[0-9a-f]{8}) -->")
+
+
+def find_export_manifest(text):
+    """Extract the recorded fingerprint + source ids from a previously
+    exported file's trailing manifest comment. Returns None if the file
+    carries no manifest — e.g. it was exported --bare, or predates this
+    fingerprint (§3.8: an absent manifest is named, never mistaken for a
+    match)."""
+    m = EXPORT_MANIFEST_RE.search(text)
+    if not m:
+        return None
+    return {"fp": m.group("fp"),
+           "ids": [i.lstrip("#") for i in m.group("ids").split()]}
+
+
+def render_verify_export(manifest, blocks, key, value, recent=False):
+    """Has the pile drifted since this file was exported? Recomputes the
+    CURRENT fingerprint for key:value and compares to what was recorded at
+    export time. Never repairs and never re-exports — reports MATCH or DRIFT
+    only (§3.10: staleness is reported, never silently repaired)."""
+    chosen = order_blocks(select_blocks(blocks, key, value), recent=recent)
+    if manifest is None:
+        return ("NO MANIFEST — this export carries no content fingerprint "
+                "(exported --bare, or predates verify-export). Nothing to "
+                "compare against.\n")
+    new_fp = content_fingerprint(chosen)
+    if new_fp == manifest["fp"]:
+        return (f"MATCH — {key}:{value} is unchanged in the pile since export "
+                f"(content:sha256:{manifest['fp']}, {len(chosen)} block(s)).\n")
+    old_ids, new_ids = set(manifest["ids"]), {b.id for b in chosen}
+    added, removed = new_ids - old_ids, old_ids - new_ids
+    lines = [f"DRIFT — {key}:{value} has changed in the pile since export: "
+            f"was content:sha256:{manifest['fp']}, now content:sha256:{new_fp}."]
+    if added:
+        lines.append(f"  now also matches: {' '.join('#'+i for i in sorted(added))}")
+    if removed:
+        lines.append(f"  no longer matches (edited, retagged, or removed): "
+                     f"{' '.join('#'+i for i in sorted(removed))}")
+    if not added and not removed:
+        lines.append(f"  same {len(chosen)} block(s) by id — body content changed")
+    lines.append("  the exported file is stale; re-run `scribe export` to refresh it.")
+    return "\n".join(lines) + "\n"
 
 
 def push_view(view_text, pile_blocks):
@@ -1187,6 +1404,39 @@ def cmd_backlinks(args):
     return EXIT_FINDINGS if bad_total else 0
 
 
+def cmd_activate(args):
+    """`scribe activate <condition> PILE [PILE...] [--key awaits]` — every
+    block, in any of the given piles, currently declaring interest in this
+    condition. Derived fresh every call; nothing is ever written back, and
+    nothing is auto-promoted — the human rules every promotion, always."""
+    piles = {}
+    bad_total = 0
+    for path in args.pile:
+        text_in = _read_input(path)
+        piles[os.path.abspath(path)] = parse_pile(text_in)
+        bad_total += _announce_malformed(text_in, path)
+    hits = compute_activations(piles, args.condition, key=args.key)
+    sys.stdout.write(render_activate(args.condition, hits, key=args.key))
+    return EXIT_FINDINGS if bad_total else 0
+
+
+def cmd_converges(args):
+    """`scribe converges PILE PILE [...] [--by KEY] [--no-cites]` — a first
+    structural attempt at Charter §3.15's still-open gap: candidate DNA shared
+    between different projects that was never explicitly cross-referenced.
+    Every finding is a literal match, disclosed as a candidate only."""
+    piles = {}
+    bad_total = 0
+    for path in args.pile:
+        text_in = _read_input(path)
+        piles[os.path.abspath(path)] = parse_pile(text_in)
+        bad_total += _announce_malformed(text_in, path)
+    tag_groups = compute_convergences(piles, tag_key=args.by)
+    citation_groups = {} if args.no_cites else compute_citation_convergences(piles)
+    sys.stdout.write(render_convergences(tag_groups, citation_groups))
+    return EXIT_FINDINGS if bad_total else 0
+
+
 def cmd_toc(args):
     text_in = _read_input(args.pile)
     blocks = parse_pile(text_in)
@@ -1207,6 +1457,21 @@ def cmd_export(args):
     sys.stderr.write(f"exported {len(chosen)} block(s) of {key}:{value} "
                      f"({_order_note(recent)})\n")
     _note_retired_selector(key)
+    bad = _announce_malformed(text_in, args.pile)
+    return EXIT_FINDINGS if bad else 0
+
+
+def cmd_verify_export(args):
+    """`scribe verify-export EXPORTED_FILE selector PILE` — has the pile
+    drifted since this file was exported? Never repairs; reports only."""
+    with open(args.exported, "r", encoding="utf-8") as fh:
+        exported_text = fh.read()
+    manifest = find_export_manifest(exported_text)
+    text_in = _read_input(args.pile)
+    blocks = parse_pile(text_in)
+    key, value = _selector(args.selector)
+    sys.stdout.write(render_verify_export(manifest, blocks, key, value,
+                                          recent=args.recent))
     bad = _announce_malformed(text_in, args.pile)
     return EXIT_FINDINGS if bad else 0
 
@@ -1322,6 +1587,32 @@ def build_parser():
     bl.add_argument("pile", nargs="+", help="one or more piles to search across")
     bl.set_defaults(func=cmd_backlinks)
 
+    ac = sub.add_parser("activate",
+                        help="derive every block currently declaring interest in a "
+                             "named condition via @awaits:/etc. (the query half of a "
+                             "dpkg-trigger-style interest/activate pair) — read-only, "
+                             "never promotes")
+    ac.add_argument("condition", help="the exact condition string to match, e.g. "
+                                      "schnees-ruling-on-whether-to-check-the-vessel-repos")
+    ac.add_argument("pile", nargs="+", help="one or more piles to search across")
+    ac.add_argument("--key", default="awaits", metavar="KEY",
+                    help="which tag key to match (default: awaits; @dissolves: is "
+                         "the other witness-shaped key in this vocabulary)")
+    ac.set_defaults(func=cmd_activate)
+
+    cv = sub.add_parser("converges",
+                        help="derive candidate DNA shared between DIFFERENT piles that "
+                             "was never explicitly cross-referenced: shared tag-values "
+                             "and shared Charter-clause citations. Disclosed candidates "
+                             "only — never asserted as real relations, never merged")
+    cv.add_argument("pile", nargs="+", help="two or more piles (different projects) "
+                                            "to compare")
+    cv.add_argument("--by", default=None, metavar="KEY",
+                    help="restrict the tag-value scan to one key (default: all keys)")
+    cv.add_argument("--no-cites", action="store_true",
+                    help="skip the body-text Charter-clause citation scan")
+    cv.set_defaults(func=cmd_converges)
+
     t = sub.add_parser("toc", help="regenerate the table of contents from tags")
     t.add_argument("pile")
     t.add_argument("--by", default="topic", metavar="KEY",
@@ -1348,6 +1639,18 @@ def build_parser():
                         "instead — scribe does not decide what a body is, only offers "
                         r"the join. '\n' is interpreted as a newline.")
     e.set_defaults(func=cmd_export)
+
+    ve = sub.add_parser("verify-export",
+                        help="check whether a previously-exported file has gone stale "
+                             "relative to the pile it came from (content fingerprint, "
+                             "never repairs — Knuth's WEB checksum principle applied "
+                             "to a whole derived view)")
+    ve.add_argument("exported", help="the previously-exported file to check")
+    ve.add_argument("selector", help="the same key:value used at export time")
+    ve.add_argument("pile")
+    ve.add_argument("--recent", action="store_true",
+                    help="pass if the original export used --recent")
+    ve.set_defaults(func=cmd_verify_export)
 
     ph = sub.add_parser("push", help="push edits in a view back into the pile by #id")
     ph.add_argument("view", help="the edited view file")
