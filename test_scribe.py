@@ -240,6 +240,123 @@ class TestViews(unittest.TestCase):
         self.assertIn("#n1", text)              # back-link survives, out of the way
         self.assertIn("<!-- scribe export", text)
 
+    def test_export_default_joiner_unchanged(self):
+        """No --joiner given: behaviour is byte-for-byte what it always was."""
+        text, _ = scribe.render_export(self.blocks, "topic", "nas", bare=True)
+        self.assertIn("\n\n---\n\n", text)
+
+    def test_export_custom_joiner_is_code_safe(self):
+        """A '---' line is a Python SyntaxError; a code export needs a different
+        join than prose does. Scribe doesn't decide what a body is, only offers it."""
+        text, _ = scribe.render_export(self.blocks, "topic", "nas", bare=True, joiner="\n\n")
+        self.assertNotIn("---", text)
+
+    def test_export_empty_joiner(self):
+        text, chosen = scribe.render_export(self.blocks, "topic", "nas", bare=True, joiner="")
+        self.assertEqual(text, "".join(b.body for b in chosen) + "\n")
+
+
+POINTER_PILE = (
+    "@@ #a1 2026-01-01T00:00 @topic:nas @source:s\nAlpha, the original claim.\n\n"
+    "@@ #b2 2026-01-01T00:01 @topic:nas @corrects:#a1 @source:s\nBeta corrects Alpha.\n\n"
+    "@@ #c3 2026-01-01T00:02 @topic:git @source:s\nGamma, unrelated, nothing points at it.\n"
+)
+
+
+class TestBacklinks(unittest.TestCase):
+    """v1.1.2 — the derived reverse index. Ratified 2026-07-31: tagging/TAG-KEYS-
+    reference-v1-DRAFT.md (A.4) already said back-references must be derived, never
+    hand-written; this is that principle finally built. Confirmed against real prior
+    art before writing it: Foam's graph.ts keeps a computed `backlinks` map, Logseq's
+    reference.cljs computes get-linked-references the same way. Read-only by
+    construction — nothing here is ever written back into a pile."""
+
+    def setUp(self):
+        self.blocks = scribe.parse_pile(POINTER_PILE)
+
+    def test_finds_a_real_pointer(self):
+        back = scribe.compute_backlinks({"pile.txt": self.blocks})
+        out = scribe.render_backlinks("pile.txt", "a1", back)
+        self.assertIn("What points at pile.txt#a1 (1):", out)
+        self.assertIn("#b2", out)
+        self.assertIn("via @corrects:#a1", out)
+
+    def test_absence_is_named_not_silent(self):
+        """§3.8 — a block nothing points at must say so, not return empty/nothing."""
+        back = scribe.compute_backlinks({"pile.txt": self.blocks})
+        out = scribe.render_backlinks("pile.txt", "c3", back)
+        self.assertEqual(out, "(nothing points at pile.txt#c3)\n")
+
+    def test_never_reports_a_block_as_pointing_at_itself(self):
+        blocks = scribe.parse_pile(
+            "@@ #x1 2026-01-01T00:00 @ref:#x1 @source:s\nself-reference, never a backlink\n")
+        back = scribe.compute_backlinks({"pile.txt": blocks})
+        out = scribe.render_backlinks("pile.txt", "x1", back)
+        self.assertEqual(out, "(nothing points at pile.txt#x1)\n")
+
+    def test_a_value_that_is_not_a_real_id_is_not_a_false_positive(self):
+        """A '#' in ordinary prose (a hex color, a hashtag-shaped word) must not be
+        mistaken for a pointer just because it starts with '#' -- only a value
+        matching a REAL block id in the resolved pile counts."""
+        blocks = scribe.parse_pile(
+            "@@ #d4 2026-01-01T00:00 @topic:colors @swatch:#deadbeef @source:s\nnot a pointer\n")
+        back = scribe.compute_backlinks({"pile.txt": blocks})
+        self.assertEqual(back, {})
+
+    def test_cross_pile_backlink_resolves_across_two_files(self):
+        """Schnee's sovereignty instruction (2026-07-30): relations must work BETWEEN
+        piles too, with no database and no new dependency -- `path#id` is a single
+        @key:value string, the 30-year-old URL-fragment convention."""
+        import os
+        import tempfile
+        d = tempfile.mkdtemp()
+        ledger = os.path.join(d, "LEDGER.txt")
+        other = os.path.join(d, "OTHER.txt")
+        with open(ledger, "w") as f:
+            f.write("@@ #4d2e 2026-01-01T00:00 @topic:x @source:s\nthe ledger entry\n")
+        with open(other, "w") as f:
+            f.write("@@ #g1tp 2026-01-01T00:01 @ratified-by:LEDGER.txt#4d2e @source:s\n"
+                    "a procedure ratified by that ledger entry\n")
+        piles = {ledger: scribe.parse_pile(open(ledger).read()),
+                 other: scribe.parse_pile(open(other).read())}
+        back = scribe.compute_backlinks(piles)
+        out = scribe.render_backlinks(ledger, "4d2e", back, same_pile_label="LEDGER.txt")
+        self.assertIn("What points at LEDGER.txt#4d2e (1):", out)
+        self.assertIn("OTHER.txt#g1tp", out)
+        self.assertIn("via @ratified-by:LEDGER.txt#4d2e", out)
+
+    def test_cli_bare_hash_defaults_to_the_first_pile(self):
+        import contextlib
+        import io
+        import os
+        import tempfile
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "only.txt")
+        with open(path, "w") as f:
+            f.write(POINTER_PILE)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = scribe.cmd_backlinks(_Args(target="#a1", pile=[path]))
+        self.assertEqual(rc, 0)
+        out = buf.getvalue()
+        self.assertIn(f"What points at {os.path.basename(path)}#a1 (1):", out)
+        self.assertIn("#b2", out)
+
+    def test_cli_refuses_a_pile_name_not_given_on_the_command_line(self):
+        import contextlib
+        import io
+        import os
+        import tempfile
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "only.txt")
+        with open(path, "w") as f:
+            f.write(POINTER_PILE)
+        buf_err = io.StringIO()
+        with contextlib.redirect_stderr(buf_err):
+            rc = scribe.cmd_backlinks(_Args(target="nope.txt#a1", pile=[path]))
+        self.assertEqual(rc, 1)
+        self.assertIn("REFUSED", buf_err.getvalue())
+
 
 class TestPushHome(unittest.TestCase):
     def test_edit_in_view_lands_in_right_block(self):

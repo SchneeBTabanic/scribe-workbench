@@ -201,8 +201,8 @@ class ScribeViewer(App):
         if args and args[0] == "scribe":
             args = args[1:]
         if args and args[0] in ("blocks", "toc", "export", "check", "tag", "doctor",
-                                "capture"):
-            if args[0] in ("blocks", "toc", "tag") and self.pile not in args:
+                                "capture", "backlinks"):
+            if args[0] in ("blocks", "toc", "tag", "backlinks") and self.pile not in args:
                 args = args + [self.pile]
             elif args[0] == "export" and self.pile not in args:
                 args = args + [self.pile]

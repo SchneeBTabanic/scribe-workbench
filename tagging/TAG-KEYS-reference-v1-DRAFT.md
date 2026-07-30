@@ -232,6 +232,15 @@ Honest, because it changes how much weight these rows can bear:
    index is — see A.4), or widen `render_toc` to group by a key you choose. Worth deciding before
    the pile trial, not after.
 
+   **UPDATE (v1.1.0, 2026-07-28): this row is now stale as written — `toc --by KEY` shipped,**
+   widening `render_toc` to any key, `@topic:` kept only as the unwidened default. The remaining
+   half of this row's question (should a SECOND key also get a hard-wired default?) was raised
+   again independently in `TAGS-bench-sheet.md` and ruled **DECLINED, 2026-07-30**
+   (RIPE-LEDGER.txt `#b558`): `--by <key>` already gives any key the axis at the cost of one
+   flag, so a second privileged default buys ergonomics by re-introducing the registry this
+   sheet exists to avoid. Left in place above rather than deleted, per this file's own §A.7
+   discipline — the working-draft reasoning is part of the record, not just its conclusion.
+
 3. **The validator cannot see hyphenated keys.** `tag_validator.py:48` is
    `@(?P<key>[a-z]+):(?P<val>\S+)` — keys are lowercase letters only. scribe's own
    `TAG_RE` (`scribe.py:54`) is `@([^\s:]+):(\S+)` and accepts anything. So `@renamed-from:x`
@@ -441,4 +450,51 @@ against the original corpus this session.** The LEDGER and RESIDUE rows were ver
 written; the Knuth and Perry & Wolf line numbers are from this session's reading of the local files.
 If a row is about to earn a place in the settled sheet, re-read its source first — that is the
 three-citation test's own discipline, and this appendix is at most one citation of the three.
+
+---
+
+## A.8 — Found already in use, not mined: fed back per `vocabulary_coverage.py`'s own finding (2026-07-29)
+
+**Not from Debian, Knuth, Perry & Wolf, or Bird.** `ontology-midwife/tagging-lab/vocabulary_coverage.py`
+cross-references this sheet against actual pile usage — the reverse direction from A.1–A.5, checking
+what a session already DOES rather than what a study SAYS. First run found two keys live in real piles
+and absent here: exactly the F8 shape (§A.0), caught early instead of after thirty years.
+
+| key | value shape | what it does | provenance |
+|---|---|---|---|
+| `@verified:` | a short slug describing what confirmed the claim | **The evidentiary note attached when an `@aspect:prospective` closes.** Live in `RIPE-LEDGER.txt` on 7 of 9 blocks before this entry existed (e.g. `@verified:merged-to-main-ff-only-7a48325-unpushed`, `@verified:prediction-held-branch-closed`) — coined in practice, never fed back. **Overlaps `@dissolves:` in spirit** (both are about a prospective item's ending) but differs in shape: `@dissolves:` is a *pre-declared condition* set when the block opens ("this is what would retire me"); `@verified:` is *evidence attached after the fact* ("this is what actually did"). Worth deciding whether they should be one key or stay two — a real open question, not resolved here. | found in use, `RIPE-LEDGER.txt`, 2026-07-29 |
+| `@part:` | a short slug naming which derived artifact this block belongs to | **The tangle-loop's own grouping key.** Live in `ontology-midwife/sandbox/tangle-loop-demo.txt` (`@part:guide`, `@part:reader-logic`) — one canonical pile, two audiences, each derived separately via `scribe export part:X --bare`. A **grouping key** in A.0's own taxonomy (closed-ish set, makes a real view), same family as `@aspect:`. | found in use, `tangle-loop-demo.txt`, 2026-07-29 |
+
+**Neither is ratified.** Both are recorded because they are already real, not because they are decided —
+same footing as Appendix A: candidates for your hand. The three-citation test has not been run on
+either row.
+
+## A.9 — Found missing, then built: `scribe backlinks`, the reverse-lookup capability (2026-07-31)
+
+**The inverse of A.8.** Schnee's question, after reading `scribe-workbench/support-ref`'s Gemini/
+Obsidian write-up: are the pointer-style keys already on this sheet (`@ref:`, `@overrules:`,
+`@superseded:`, `@yields:`, `@replaces:`, `@continues:`, `@customizes:`, `@hoisted:from-`) short on
+*relational power*? Checked the actual cloned repos, not the summary: Foam
+(`packages/foam-core/src/model/graph.ts`) and Logseq (`deps/db/src/logseq/db/common/reference.cljs`)
+both confirm the exact principle A.4 already states from Knuth — *"back-references are derived,
+never hand-written"* — but this sheet had never had that principle actually built into `scribe.py`.
+None of these keys had a reverse query: `scribe view overrules:c98b` finds the OVERRULING block, but
+nothing found every block that named `c98b` under ANY of these keys at once — a human had to
+already know which specific key to ask.
+
+**RATIFIED AND SHIPPED, v1.1.2.** `scribe backlinks <#id | pile#id> PILE [PILE...]` computes this:
+one pass over `parse_pile()`'s own blocks, matching any tag value shaped `#id` (or, for relations
+BETWEEN piles, `path#id` — the URL-fragment convention, still one whitespace-free string, no new
+dependency, per Schnee's explicit data-sovereignty instruction: no database, ever) against real
+block ids, building the reverse map fresh every call — same shape as Foam's `backlinks` map and
+Logseq's `get-linked-references`, never written back into the pile. Tested live against
+`RIPE-LEDGER.txt` (real `@corrects:`/`@resolves:`/`@reconfirms:` tags) and a genuine cross-pile
+case (`STANDING-PROCEDURES.txt#g1tp` → `RIPE-LEDGER.txt#4d2e`) before shipping, and pinned by 7
+tests in `test_scribe.py::TestBacklinks` — including a false-positive guard (a `#`-prefixed value
+that is not a real block id is never mistaken for a pointer) and a real cross-pile round trip.
+Kanboard's typed-bidirectional-relation-PAIRS (a `links` table with a label/opposite-label pair)
+were checked and are NOT adopted: they need a registry, which this sheet's whole discipline
+(§A.0's "none of this is hard-wired") refuses; this project's existing per-key typing (the key
+itself names the relation) already gets the same benefit without one. Full writeup:
+`RIPE-LEDGER.txt` `#a4c1`; provenance: `PROVENANCE.md` v1.1.2.
 

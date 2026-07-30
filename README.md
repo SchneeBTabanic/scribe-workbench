@@ -51,10 +51,17 @@ scribe view topic:nas PILE            # gather every block on a topic (un-moved)
 scribe view act:guards-the-edge PILE  # …or on any other key; --recent for newest-first
 scribe toc PILE [--by KEY]            # contents by any key; names its axis and its loss
 scribe keys PILE                      # every key and value in the pile, with counts
-scribe export topic:nas PILE [--bare] # clean export to paste into the next mind
+scribe export topic:nas PILE [--bare] [--joiner S] # clean export to paste into the
+    next mind; --joiner (v1.1.1) makes the concatenation itself code-safe when a body
+    is meant to tangle into one runnable file (default joiner is prose punctuation and
+    breaks code) — see tagging/TAGS-bench-sheet.md's "For the tangle-loop" section
 scribe push VIEW PILE                 # push edits made in a view home, by #id
 scribe tag 50c1 PILE --tag aspect:manifesting   # add/remove tags on a block
 scribe blocks PILE                    # list blocks with their whole tag run
+scribe backlinks TARGET PILE [PILE...] # derive every block whose tag VALUE names
+    TARGET (the reverse of @ref:/@overrules:/etc.) — TARGET is #id (this pile) or
+    pile.txt#id (a named pile, for relations BETWEEN piles); computed fresh, never
+    written back — see tagging/TAG-KEYS-reference-v1-DRAFT.md A.9
 scribe stamp PILE [--show]            # put the pile's own reading instructions on top
 scribe check TEXT                     # run the loss-auditor standalone
 scribe doctor                         # disclose the artifact SHA + runtime deps
@@ -90,8 +97,9 @@ core never depends on it. See `edge/README.md`.
 
 ## Freeze
 
-v1.0-frozen. Stdlib-only, offline-rebuildable; see `PROVENANCE.md`. Verify with
-`scribe doctor`. License **AGPL-3.0-or-later**.
+v1.1.2 current (additive over v1.0-frozen; frozen-ness was ruled to never be a reason
+not to correct the tool — see `PROVENANCE.md`'s v1.1.0 entry). Stdlib-only,
+offline-rebuildable. Verify with `scribe doctor`. License **AGPL-3.0-or-later**.
 
 ## Design principle
 
@@ -106,6 +114,9 @@ feeds back into what gets produced is the one pattern this project refuses.
 - `GUIDE-scribe-with-xed.md` — practical guide to using Scribe beside a plain editor (xed).
 - `PROVENANCE.md` — freeze record (SHAs, toolchain).
 - `edge/README.md` — the quarantined capture edge.
+- `tagging/README.md` — which of the two tag docs below to open, and when.
+- `tagging/TAGS-bench-sheet.md` — the DOING sheet; keep this open while you tag.
+- `tagging/TAG-KEYS-reference-v1-DRAFT.md` — the WHY behind each key, for a rainy day.
 
 *(The full gated build record and design correspondence are kept in the sovereign's
 development repository, not in this public release.)*

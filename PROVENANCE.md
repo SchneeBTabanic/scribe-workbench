@@ -1,6 +1,64 @@
 # PROVENANCE — Scribe's Workbench
 
-## v1.1.0 — "unfreeze the keys" (2026-07-28) — CURRENT
+## v1.1.2 — "derive the reverse" (2026-07-31) — CURRENT
+
+A named new version, not a silent edit (§5.8). Additive only; v1.1.1 below is unchanged.
+
+| File | Role | SHA-256 |
+|---|---|---|
+| `scribe.py` | frozen core | `e718af8f2e85901b9b2edaedae62de0cc58e360d9d72e353ee94c29da23a8f57` |
+| `test_scribe.py` | core tests (61) | `00db399488aaccea9b9c0fcd4547599d23282cacdd6a4e4a29fdf71699865f10` |
+
+**What changed, and why.** `tagging/TAG-KEYS-reference-v1-DRAFT.md` (A.4, citing Knuth's WEAVE)
+already said back-references must be derived, never hand-written — but no code path in scribe
+computed the reverse direction for any of its own pointer-style keys (`@ref:`, `@overrules:`,
+`@superseded:`, `@yields:`, `@replaces:`, `@continues:`, `@customizes:`, `@hoisted:from-`). A
+human had to already know which specific key to ask `scribe view <key>:<value>` with. Confirmed
+against real prior art before building this: Foam's `packages/foam-core/src/model/graph.ts`
+keeps a computed `backlinks` map (never hand-maintained), Logseq's
+`deps/db/src/logseq/db/common/reference.cljs` computes `get-linked-references` the same way.
+New verb: `scribe backlinks <#id | pile#id> PILE [PILE...]` — a derived, read-only reverse index
+over the given pile(s), computed fresh every call, never written back. Detection is structural,
+not a key allow-list (no registry, same as the rest of scribe): any tag value shaped `#id` or
+`path#id` naming a real block id counts. The `path#id` form (a single whitespace-free string,
+the 30-year-old URL-fragment convention) extends the mechanism to relations BETWEEN piles, not
+only within one — no database, no new dependency, per the sovereignty requirement this was
+built under. `compute_backlinks`/`render_backlinks` are pure functions; `cmd_backlinks` is the
+CLI wrapper. 7 new tests, including a false-positive guard (a `#`-prefixed value that is not a
+real block id is never mistaken for a pointer) and a genuine cross-pile round trip against two
+real temp files.
+
+**Test attestation at v1.1.2:** 61 core tests pass (54 + 7 new). Toolchain unchanged.
+
+---
+
+## v1.1.1 — "a code-safe join" (2026-07-29)
+
+A named new version, not a silent edit (§5.8). Additive only; v1.1.0 below is unchanged.
+
+| File | Role | SHA-256 |
+|---|---|---|
+| `scribe.py` | frozen core | `7aaf6d692306fe6506dca2ffade4fe182e75c29a5cac51a2177dc1869bb66a67` |
+| `test_scribe.py` | core tests (54) | `eb11fbbf4dafc622839f019b56a7611007d6a37bcec6b55eb7de32c121781716` |
+
+**What changed, and why.** `export`'s body-joiner (`\n\n---\n\n`) was hard-coded — fine for prose, but
+a bare `---` line is a Python `SyntaxError`, so bodies meant to tangle into one runnable file (a
+canonical pile carrying both prose and code blocks, each derived separately — see
+`ontology-midwife/sandbox/tangle-loop-demo.txt`) had no clean path to a directly-runnable export.
+Added `--joiner` (default unchanged; `\n` in the given string is interpreted as a newline, so
+`--joiner '\n\n'` gives a blank-line join). Scribe still does not decide what a body IS — it only
+offers the join a code export needs. `render_export` gained a `joiner=None` parameter (falls back to
+the prior literal default, `DEFAULT_JOINER`); no other call site changed. Verified: default export is
+byte-for-byte unchanged (regression test), a custom joiner is confirmed code-safe (compiles + runs), and
+the frozen-core edit itself was never the hard part — `PROVENANCE.md`'s own v1.1.0 entry already settled
+that frozen-ness is never a reason not to correct the tool.
+
+**Test attestation at v1.1.1:** 54 core tests pass (51 + 3 new: default-joiner-unchanged, custom-joiner-
+is-code-safe, empty-joiner). Toolchain unchanged from v1.1.0.
+
+---
+
+## v1.1.0 — "unfreeze the keys" (2026-07-28)
 
 A named new version, not a silent edit (§5.8: preserve history; never modify a prior
 version in place). The **v1.0-frozen record below is left exactly as it was** and remains

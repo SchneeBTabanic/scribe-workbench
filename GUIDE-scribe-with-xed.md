@@ -69,6 +69,19 @@ Check the tool is alive and see its freeze fingerprint any time:
 scribe doctor
 ```
 
+**And the one command that always tells you everything else: `scribe --help`.** It lists
+every verb scribe has, one line each, straight from the tool itself — never a second copy
+of the list that this guide could drift out of sync with. Forgotten a verb's exact
+arguments? `scribe <verb> --help` (e.g. `scribe backlinks --help`) shows that one verb's
+full usage. This guide teaches the *daily rhythm* — when to reach for which verb, and why —
+`--help` is the *reference*, and it can never go stale because it's generated from the code
+that runs, not written down separately.
+
+```bash
+scribe --help              # every verb, one line each
+scribe backlinks --help    # one verb, full argument detail
+```
+
 ---
 
 ## The mental model — pile vs view
@@ -249,6 +262,7 @@ safe direction you already trust.
    work      :  edit bodies in xed, save
    land      :  scribe push X.view pile.txt         # edits home by #id ; delete the view
    hand off  :  scribe export topic:X pile.txt --bare > for-ai.txt ; xed for-ai.txt &
+   who points at it: scribe backlinks '#c98b' pile.txt   # v1.1.2 — see below
 ```
 
 `scribe toc pile.txt` any time prints the whole table of contents from your tags — the list
@@ -270,6 +284,32 @@ page can never quietly suggest that subjects are all there is:
 what you actually reach for, and to find the axes worth indexing by. (It replaces the
 `grep | tr | sed | sort -u` recipe this guide used to carry: a practice living in a paragraph
 of prose belongs in the tool.)
+
+**`scribe backlinks` (v1.1.2) — "what points at this block?"** The moment you start using
+relational tags — `@ref:`, `@overrules:`, `@corrects:`, `@superseded:`, or any key you invent
+that names another block's id — you'll want the REVERSE question answered: not "what does
+block c98b point at" (that's just reading its own header) but "what points *at* c98b?" That's
+what this derives, fresh, every time you ask — never written back into the pile:
+
+```bash
+scribe backlinks '#c98b' pile.txt
+#   What points at pile.txt#c98b (1):
+#     #d4e1 (2026-08-01T09:00) via @corrects:#c98b
+#
+# nothing pointing at it yet?
+scribe backlinks '#a1a1' pile.txt
+#   (nothing points at pile.txt#a1a1)
+```
+
+It also works **across piles**, if you ever split your work into more than one — say a work
+pile and a personal one, or one pile per project. Name the other pile in the target, `pile#id`:
+
+```bash
+scribe backlinks 'work.txt#c98b' work.txt personal.txt
+```
+
+Any tag value shaped `#id` or `otherpile.txt#id` counts, on any key — there's no fixed list of
+"relational" keys to remember; if a value names a real block id, `backlinks` finds it.
 
 **Your pile explains itself to whoever opens it.** A pile created from v1.1.0 onward starts with
 a short comment header saying what the format is, which commands search it properly, and why a

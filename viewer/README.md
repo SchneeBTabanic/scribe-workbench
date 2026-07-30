@@ -31,7 +31,7 @@ python3 viewer/scribe_viewer.py pile.txt      # needs `textual`; scribe itself d
 |---|---|
 | `view topic:nas` | derives the view, opens it as an **editable** tab, discloses its `#id`s |
 | `push` / `push topic:nas` | sends that tab home by `#id` — the only thing that writes |
-| `blocks`, `toc`, `export …`, `check`, `tag …`, `doctor` | passed to scribe, output in the log |
+| `blocks`, `toc`, `export …`, `check`, `tag …`, `backlinks …`, `doctor` | passed to scribe, output in the log |
 | `/help` | scribe's own command list, **derived from scribe** (see below) |
 | `/close NAME`, `/hide`, `Esc` | dispose a tab / hide the panel |
 
@@ -47,10 +47,11 @@ stdout and `scribe push -` reads the edited view from **stdin**, so the whole ro
 derive, edit, push — never materialises a file. The canonical pile is the only thing on disk,
 and only `push` touches it.
 
-**Frozen scribe is never imported, only invoked.** `scribe.py` is v1.0-frozen. This shell
-calls it as a subprocess, so it *cannot* change scribe's behaviour — the freeze holds by
-construction rather than by promise. `viewer/` is an unfrozen sibling of a frozen core; the
-freeze covers `scribe.py` and its tests, not this directory.
+**Frozen scribe is never imported, only invoked.** `scribe.py` is at v1.1.2 (additive over
+v1.0-frozen; see `PROVENANCE.md`). This shell calls it as a subprocess, so it *cannot* change
+scribe's behaviour — the freeze holds by construction rather than by promise. `viewer/` is an
+unfrozen sibling of a frozen core; the freeze covers `scribe.py` and its tests, not this
+directory.
 
 ## Provenance — this is a descendant, not a mirror
 

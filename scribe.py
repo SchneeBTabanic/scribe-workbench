@@ -46,7 +46,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 
-VERSION = "1.1.0"
+VERSION = "1.1.2"
 
 # The one external process the HTML path shells to. Recorded for provenance (§4.4); the
 # tool discloses the running pandoc via `scribe doctor` and hard-fails if it is absent.
@@ -633,6 +633,72 @@ def select_blocks(blocks, key, value):
     return [b for b in blocks if b.id and (key, value) in b.tags]
 
 
+# ---------------------------------------------------------------------------
+# Backlinks (v1.1.2) — a DERIVED reverse index over pointer-style tag values.
+# ---------------------------------------------------------------------------
+# Ratified 2026-07-31: `tagging/TAG-KEYS-reference-v1-DRAFT.md` (A.4, Knuth)
+# already stated "back-references are derived, never hand-written" -- this is
+# that principle finally built. scribe already had many pointer-style keys
+# (@ref/@overrules/@superseded/@yields/@replaces/@continues/@customizes/
+# @hoisted-from) but no code path computed the REVERSE direction; a human had
+# to already know which specific key to ask `scribe view <key>:<value>` with.
+# Confirmed against real prior art before writing this (not reinvented):
+# Foam's packages/foam-core/src/model/graph.ts keeps a `links` map (forward)
+# and a `backlinks` map (reverse), the reverse computed by one pass over every
+# resource and never hand-maintained; Logseq's
+# deps/db/src/logseq/db/common/reference.cljs computes get-linked-references
+# the same way. Structural detection, not a key allow-list (no registry,
+# same as the rest of scribe): a value is a pointer IFF it is shaped `#id`
+# (this pile) or `path#id` (a NAMED pile, resolved relative to the pile
+# carrying the tag) and that id is real in the target pile. Read-only —
+# nothing here is ever written back into a pile.
+
+def compute_backlinks(piles):
+    """`piles` is {path: [Block, ...]} (already parsed). Returns
+    {(pile_path, target_id): [(from_pile, key, from_id, from_ts), ...]}."""
+    ids_by_pile = {p: {b.id for b in blocks if b.id}
+                  for p, blocks in piles.items()}
+
+    def _resolve_pile(from_pile, named):
+        if named in ids_by_pile:
+            return named
+        candidate = os.path.normpath(
+            os.path.join(os.path.dirname(from_pile), named))
+        return candidate if candidate in ids_by_pile else None
+
+    back = {}
+    for p, blocks in piles.items():
+        for b in blocks:
+            if not b.id:
+                continue
+            for key, val in b.tags:
+                if "#" not in val:
+                    continue
+                head, _, tail = val.partition("#")
+                target_pile = p if not head else _resolve_pile(p, head)
+                if target_pile and tail in ids_by_pile.get(target_pile, ()):
+                    if tail != b.id or target_pile != p:
+                        back.setdefault((target_pile, tail), []).append(
+                            (p, key, b.id, b.ts))
+    return back
+
+
+def render_backlinks(target_pile, target_id, back, same_pile_label=None):
+    """`same_pile_label` names the target pile as the human typed it, so a
+    same-pile hit reads `#id` (unchanged) rather than a full path."""
+    hits = back.get((target_pile, target_id), [])
+    label = f"{same_pile_label or os.path.basename(target_pile)}#{target_id}"
+    if not hits:
+        return f"(nothing points at {label})\n"
+    lines = [f"What points at {label} ({len(hits)}):"]
+    for from_pile, key, from_id, ts in hits:
+        same = from_pile == target_pile
+        origin = f"#{from_id}" if same else f"{os.path.basename(from_pile)}#{from_id}"
+        value_shown = f"#{target_id}" if same else f"{os.path.basename(target_pile)}#{target_id}"
+        lines.append(f"  {origin} ({ts}) via @{key}:{value_shown}")
+    return "\n".join(lines) + "\n"
+
+
 def block_title(b, width=66):
     """First non-empty body line, minus any leading Markdown heading marker and any
     loss-marker line — a derived label for the TOC. Extraction, not interpretation."""
@@ -731,13 +797,22 @@ def render_toc(blocks, key="topic"):
     return "\n".join(lines)
 
 
-def render_export(blocks, key, value, recent=False, bare=False):
+DEFAULT_JOINER = "\n\n---\n\n"
+
+
+def render_export(blocks, key, value, recent=False, bare=False, joiner=None):
     """A clean export to paste into the next mind: bodies only, no `@@` headers to
     scroll-and-delete. Back-links survive as an unobtrusive trailing manifest unless
-    --bare (§3.7: disclosed, not hidden; but out of the way for the paste target)."""
+    --bare (§3.7: disclosed, not hidden; but out of the way for the paste target).
+
+    `joiner` (None by default) lets the concatenation itself become code-safe: the
+    default `---` separator is prose punctuation, and a bare literal `---` line is a
+    Python SyntaxError, so bodies meant to tangle into one runnable file need a
+    different join (e.g. a blank line) than bodies meant to be read as prose. Scribe
+    does not decide what a body IS — it only offers the join a code export needs."""
     chosen = order_blocks(select_blocks(blocks, key, value), recent=recent)
     parts = [b.body for b in chosen]
-    out = "\n\n---\n\n".join(parts)
+    out = (joiner if joiner is not None else DEFAULT_JOINER).join(parts)
     if not bare and chosen:
         manifest = " ".join(f"#{b.id}" for b in chosen)
         out += f"\n\n<!-- scribe export of {key}:{value} — source blocks: {manifest} -->"
@@ -1079,6 +1154,39 @@ def cmd_view(args):
     return EXIT_FINDINGS if bad else 0
 
 
+def cmd_backlinks(args):
+    """`scribe backlinks <#id | pile#id> PILE [PILE...]` — every block, in any
+    of the given piles, whose tag VALUE names the target. Derived fresh every
+    call; nothing is ever written back. Bare `#id` resolves against the FIRST
+    named pile (the common case: one pile, asking about its own block)."""
+    piles = {}
+    bad_total = 0
+    for path in args.pile:
+        text_in = _read_input(path)
+        piles[os.path.abspath(path)] = parse_pile(text_in)
+        bad_total += _announce_malformed(text_in, path)
+
+    target_pile_name, _, target_id = args.target.rpartition("#")
+    pile_paths = list(piles)
+    if not target_pile_name:
+        target_pile, same_pile_label = pile_paths[0], None
+    else:
+        matches = [p for p in pile_paths
+                  if os.path.basename(p) == target_pile_name
+                  or p == os.path.abspath(target_pile_name)]
+        if not matches:
+            sys.stderr.write(
+                f"REFUSED: {target_pile_name!r} is not among the pile(s) given "
+                f"on this command line — list it explicitly so its ids can be "
+                f"resolved.\n")
+            return 1
+        target_pile, same_pile_label = matches[0], target_pile_name
+
+    back = compute_backlinks(piles)
+    sys.stdout.write(render_backlinks(target_pile, target_id, back, same_pile_label))
+    return EXIT_FINDINGS if bad_total else 0
+
+
 def cmd_toc(args):
     text_in = _read_input(args.pile)
     blocks = parse_pile(text_in)
@@ -1093,7 +1201,8 @@ def cmd_export(args):
     blocks = parse_pile(text_in)
     key, value = _selector(args.selector)
     recent = args.recent
-    text, chosen = render_export(blocks, key, value, recent=recent, bare=args.bare)
+    joiner = args.joiner.replace("\\n", "\n") if args.joiner is not None else None
+    text, chosen = render_export(blocks, key, value, recent=recent, bare=args.bare, joiner=joiner)
     sys.stdout.write(text)
     sys.stderr.write(f"exported {len(chosen)} block(s) of {key}:{value} "
                      f"({_order_note(recent)})\n")
@@ -1205,6 +1314,14 @@ def build_parser():
     v.add_argument("--tag-form", choices=["repeated", "comma"], default="repeated")
     v.set_defaults(func=cmd_view)
 
+    bl = sub.add_parser("backlinks",
+                        help="derive every block whose tag VALUE names this one (the "
+                             "reverse of @ref:/@overrules:/etc.) — computed fresh, "
+                             "never written back")
+    bl.add_argument("target", help="#id (this pile) or pile.txt#id (a named pile)")
+    bl.add_argument("pile", nargs="+", help="one or more piles to search across")
+    bl.set_defaults(func=cmd_backlinks)
+
     t = sub.add_parser("toc", help="regenerate the table of contents from tags")
     t.add_argument("pile")
     t.add_argument("--by", default="topic", metavar="KEY",
@@ -1224,6 +1341,12 @@ def build_parser():
     e.add_argument("pile")
     e.add_argument("--recent", action="store_true")
     e.add_argument("--bare", action="store_true", help="omit the trailing back-link manifest")
+    e.add_argument("--joiner", default=None,
+                   help="how to join bodies (default: the prose separator, "
+                        r"'\n\n---\n\n'). A bare '---' line is a Python SyntaxError, "
+                        r"so a code export that must run wants --joiner '\n\n' "
+                        "instead — scribe does not decide what a body is, only offers "
+                        r"the join. '\n' is interpreted as a newline.")
     e.set_defaults(func=cmd_export)
 
     ph = sub.add_parser("push", help="push edits in a view back into the pile by #id")

@@ -23,6 +23,14 @@ sys.path.insert(0, HERE)
 from scribe_viewer import ScribeViewer                       # noqa: E402
 from textual.widgets import Input, RichLog, TabbedContent, TabPane, TextArea  # noqa: E402
 
+# Single-sourced with the /help assertion below (§3.13) so the summary print at
+# the bottom of this file can never again say a stale count -- found live
+# 2026-07-31: it said "(9 verbs)" after a 10th (backlinks) had been added to
+# the checked tuple, the exact silent-drift shape this project's tests exist
+# to refuse elsewhere.
+_SCRIBE_VERBS = ("capture", "check", "blocks", "view", "toc", "export",
+                "push", "tag", "doctor", "backlinks")
+
 PILE = """@@ #a1b2 2026-07-26T14:00:00 @topic:probe @state:live
 First block, on the probe topic.
 
@@ -90,14 +98,22 @@ async def _drive():
         app.query_one("#entry", Input).value = "/help"
         await pilot.press("enter"); await pilot.pause()
         helptext = _log_text(app)
-        for verb in ("capture", "check", "blocks", "view", "toc", "export",
-                     "push", "tag", "doctor"):
+        for verb in _SCRIBE_VERBS:
             assert verb in helptext, f"/help missing scribe verb {verb!r}"
 
         # --- passthrough verb reaches frozen scribe
         app.query_one("#entry", Input).value = "blocks"
         await pilot.press("enter"); await pilot.pause()
         assert "3 block(s)" in _log_text(app)
+
+        # --- backlinks passthrough auto-appends the pile, same as blocks/toc/tag.
+        # This fixture has no relational tags, so the honest answer is the named
+        # absence -- confirms the command reached scribe (not a shell-side error)
+        # AND that the pile was auto-appended (scribe needs it to resolve #a1b2).
+        app.query_one("#entry", Input).value = "backlinks #a1b2"
+        await pilot.press("enter"); await pilot.pause()
+        assert "nothing points at" in _log_text(app), \
+            "backlinks must reach scribe with the pile auto-appended"
 
         # --- Esc hides without disposing
         await pilot.press("escape"); await pilot.pause()
@@ -109,7 +125,7 @@ async def _drive():
     print("ok  view opens an editable non-blocking tab with its block ids")
     print("ok  pristine push refused; pile untouched")
     print("ok  edited buffer pushes home by #id; neighbours untouched")
-    print("ok  /help derived from scribe's own argparse (9 verbs)")
+    print(f"ok  /help derived from scribe's own argparse ({len(_SCRIBE_VERBS)} verbs)")
     print("ok  passthrough verb reaches frozen scribe")
     print("ok  Esc hides without disposing")
 

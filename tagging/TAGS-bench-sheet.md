@@ -45,6 +45,36 @@ fine — just know which you're writing.
 
 ---
 
+## Every key does one of two jobs — and this is what decides whether it can ever make a VIEW
+
+This is worth understanding before the lists below, because it is the whole answer to *"which tags
+let me call which views."* `scribe view key:value` and `scribe toc --by key` both work by finding
+blocks where a key matches **exactly**. That single mechanical fact splits every tag key in this
+sheet into two families, and nothing else determines which family a key is in:
+
+| kind | value shape | what it can do |
+|---|---|---|
+| **grouping key** | a **small, closed** list of values — `@aspect:`, `@because:`, `@kept:` | makes a real view: `scribe view aspect:prospective pile.txt` pulls together every block that shares that value, whole |
+| **witness key** | free text, different on every block — `@awaits:`, `@rejected:`, `@dissolves:` | read **in place**, on the block where it sits; it can never gather blocks into a view, and that is fine — that was never its job |
+
+So when you invent a new tag, the first question is not "what should I call it" — it's **which
+kind is this**. A closed, short value-list earns you a view forever. A free-text value earns you a
+note you'll be glad to find later, but never a view. Neither is better; picking the wrong one for
+what you actually wanted is the only mistake here.
+
+**None of this is hard-wired into scribe itself** — `scribe.py` accepts any `@key:value`, no
+registry, no key list in the code (confirmed: `TAG_RE = @([^\s:]+):(\S+)`, matches anything).
+**This sheet is the only registry that exists.** The one partial exception: `scribe toc` defaults to
+grouping by `@topic:` unless you pass `--by`, so `@topic:` gets a small head start that the others
+don't — worth knowing. **Ruled DECLINED, 2026-07-30** (RIPE-LEDGER.txt `#b558`, the
+sovereign's hub ledger): no other key earns a second hard-wired default. §4.6 Poverty, plus
+`--by <key>` already making any key a grouping axis at the cost of one flag — a second
+privileged default would buy ergonomics by quietly re-introducing the very registry this
+sheet exists to avoid. A future session can overturn this on evidence; it is a rejection
+recorded with its reasoning, not a further deferral.
+
+---
+
 ## The two that carry the meaning
 
 ### `@act:` — what this block *does*
@@ -84,7 +114,7 @@ use `ruled-none`, so a later reader knows you actually looked.
 
 ---
 
-## Keys with a fixed list of values (the ones with a formula)
+## Keys with a fixed list of values (the ones with a formula) — grouping keys, make VIEWS
 
 These are the view-makers. Each has a **closed** list — don't invent new values, the whole use is
 that a handful of blocks share exactly one.
@@ -127,11 +157,63 @@ something that was deliberate.
 `self` | `claude` | `fable` | `gemini` | `grok` … Conventional rather than strictly closed; keep the
 spellings consistent or the views split in two.
 
+### `@reviewed:` — the claim only a human can make
+A version or a date: `@reviewed:v1.1.0`. **This is not a fact a machine can assert for you** — it
+means *"I read this since that point and acted on it."* An old value here is not a bug; it just
+means nobody has reviewed it since. A tool can still watch the gap and flag staleness gently — it
+just can never write this tag itself.
+
+### `@relaxes:` / `@tightens:` / `@reverts:#id` — which way the rule moved
+Three small, closed values naming the **direction** a change went, not just that a change happened.
+*Loosened a requirement* · *made it stricter* · *undid an earlier change, which still stands above
+this note so nobody loses the history.* A changelog that only says "the rule changed" makes you
+re-derive the direction by comparing old and new; this just says it.
+
+### `@preserves:` — what this change deliberately left alone
+The anti-over-reading guard: *"this does NOT relax the requirement that…"* Use it when a change is
+narrow and you can already picture a reader assuming it was broader than it was.
+
+### `@breaches:` — a rule this block knowingly broke
+Not a bug report — a **confession, kept**. Some breaks are real and get made anyway, on purpose, for
+a stated reason. Recording it in the record it breaches means the next reader isn't left to discover
+the inconsistency and wonder if it was a mistake.
+
+### `@gates:` — the irreversible act this block is withholding
+A guard sitting in front of a point of no return. Think of the safety on a trigger: naming what it
+withholds is what lets a tool (or a person) refuse to fire while the gate is up.
+
+### `@forecloses:` — the retreat this block ends
+The moment named as *"past here, there is no backing out."* Worth locating precisely, because
+knowing exactly where the point of no return is is what lets you deliberate **before** it rather than
+during it.
+
+### `@enables:` — the thing someone else must be able to DO because of this block
+Phrased as a verb they can perform, not a fact they now know. *"A stranger, with only this note, can
+now restart the service"* — not *"the service's restart procedure is documented."* A handover note
+that only states facts can still leave the next person stuck; one that names an act they can perform
+doesn't.
+
+### `@defers:` — whose judgment this is, even though you technically could act
+A fence around someone else's competence. *"Not locked — just not yours to decide."* Marks a zone
+you can enter but shouldn't, rather than one you structurally can't.
+
+### `@watches:` — an outside thing this block is keeping an eye on
+A path or a URL, plus a plain note on HOW it's being watched (by a tool comparing version strings? by
+a person checking now and then?) so nobody mistakes light watching for a guarantee nothing drifted.
+
 ---
 
-## Keys that point at another block
+## Keys that point at another block — witness keys, read in place
 
 All take a block id: `@overrules:#c98b`.
+
+**Every key below only ever names the FORWARD direction — which block reaches out.** Until
+v1.1.2 there was no way to ask the reverse question ("what points at ME?") without knowing
+in advance which of these keys to search and running `scribe view <key>:<value>` once per
+key. Now: `scribe backlinks '#c98b' pile.txt` finds every block naming `c98b` under ANY of
+these keys at once (see GUIDE-scribe-with-xed.md for the worked example, and
+`tagging/TAG-KEYS-reference-v1-DRAFT.md` A.9 for the full why). Same command answers it
+across piles too: `scribe backlinks 'other.txt#c98b' this.txt other.txt`.
 
 **`@ref:#id`** — this block reaches to that one. Worth knowing the underlying rule: *being in the
 pile is belonging; a reference is salience.* A block nothing points at is not an orphan — it just
@@ -153,7 +235,7 @@ the top.
 
 ---
 
-## Keys that carry a condition
+## Keys that carry a condition — witness keys, read in place
 
 **`@awaits:`** — the encounter that would prove this. *A "call me when…" note.* Free text,
 hyphenated: `@awaits:the-first-citation-that-drifts-and-is-caught`.
@@ -166,9 +248,17 @@ will ever write should carry a `@dissolves:`, because otherwise nobody, includin
 dare remove it. Neither one *does* anything on its own: they tell you whether the moment arrived.
 You still decide.
 
+**`@verified:`** — found already in live use (2026-07-29), not on this sheet until now, added the
+moment a checker caught the gap. What it actually is: the note you attach **after the fact**, when a
+`@aspect:prospective` block closes, saying what confirmed it — `@verified:merged-to-main-ff-only`,
+`@verified:prediction-held-branch-closed`. **It overlaps `@dissolves:` on purpose, and that overlap
+is still an open question, not a settled one:** `@dissolves:` is written at BIRTH ("this is what
+would retire me"); `@verified:` is written at the CLOSE ("this is what actually did"). You may find
+you only ever need one of the two once you've used both a while — worth watching, not deciding yet.
+
 ---
 
-## Keys you can repeat on one block
+## Keys you can repeat on one block — witness keys, read in place
 
 **`@defines:<word>`** — this is where that word was **born**, as opposed to merely used. A birth
 certificate, not a sighting. No machine can work this out; only you know which block is the real
@@ -184,7 +274,7 @@ owns it.
 
 ---
 
-## Provenance, when you want it
+## Provenance, when you want it — mostly witness; `@source:` groups if you keep spellings consistent
 
 **`@attests:<who>`** — who *vouches* for this, which is not always who wrote it. Author and
 guarantor are different jobs: `@origin:ai @attests:self` says *the AI wrote it, I stand behind it.*
@@ -202,6 +292,53 @@ reference silently coming to mean something else.
 
 **`@renames:<old-key>`** — you retired a key and this is the record. Keeps old spellings readable
 instead of turning them into rubble.
+
+---
+
+## Keys about SHAPE and ORDER — witness keys, read in place
+
+These come from Knuth's WEB, read as a tagging system. They're not about what a block *means* — they're
+about how several blocks relate to each other as a structure.
+
+**`@continues:<the-whole-this-extends>`** — this block is another chapter of an earlier one, not a
+new thing. Worth knowing: **you already have this without a new key** — `scribe view act:X pile.txt`
+gathers every block sharing that value into one whole. A view *is* a tangle. So the real question
+this key answers isn't "is this a new key" — it's "what wholes do I want gathered," and that question
+is really about which `@act:`/`@path:` values you choose to repeat.
+
+**`@reads:after-#id`** — the order a human should read these in, which is neither arrival order nor
+most-recent-first (the only two scribe offers today). If you ever have a pile where the *telling*
+order and the *arrival* order genuinely differ, this is the missing third axis.
+
+**`@customizes:#id`** — a small, local adaptation of another block, declared as exactly that rather
+than folded silently into it.
+
+**`@refuses:<the-thing-not-done>`** — a capability you deliberately left out, with the reason
+attached. *"I saw this option and chose not to build it, and here's why"* — so a future reader (or
+future you) doesn't assume it was simply never considered.
+
+**`@carries:<what-would-fall-without-this>`** — load-bearing, as opposed to decoration. Naming which
+parts of a pile or a design are structural is what lets everyone else avoid the kind of change that
+looks harmless and quietly erodes it.
+
+**`@hoisted:from-#id`** — this block used to be squeezed inside that one, and got its own space
+because it needed to grow. The subtle reason to know this exists: people quietly shrink the important
+but awkward part of something (error-handling, an edge case) just to keep the parent tidy, without
+noticing they're doing it. Splitting it out and naming where it came from lets it grow to whatever
+size it actually needs.
+
+---
+
+## For the tangle-loop: piles that derive more than one artifact
+
+**`@part:<which-derived-artifact>`** — a grouping key, found in live use (2026-07-29) before it was
+ever documented. When one canonical pile holds tagged blocks meant for **different audiences or
+outputs** — a plain guide for a person, working code for a tool — `@part:guide` and
+`@part:reader-logic` let `scribe export part:X pile.txt --bare` pull out exactly one artifact at a
+time, leaving the other alone. See `ontology-midwife/sandbox/tangle-loop-demo.txt` for a small,
+real, working example — including how to derive a directly-runnable file:
+`scribe export part:reader-logic pile.txt --bare --joiner '\n\n'` (v1.1.1 — the default separator is
+prose punctuation and breaks code; `--joiner` gives you a blank-line join instead).
 
 ---
 
