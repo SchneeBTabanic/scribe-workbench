@@ -46,7 +46,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 
-VERSION = "1.2.0"
+VERSION = "1.3.1"
 
 # The one external process the HTML path shells to. Recorded for provenance (§4.4); the
 # tool discloses the running pandoc via `scribe doctor` and hard-fails if it is absent.
@@ -156,12 +156,32 @@ PILE_STAMP = f"""{STAMP_MARK} — one canonical file, appended in arrival order.
 # Read it off the block's own tags, and say when they are absent rather than guessing:
 #   @source:  which mind said it        @origin:  human or ai — which kind made it
 #   @attests: who vouches for it, which is NOT always who wrote it
-# Untagged means unknown, not mine and not anyone's. (scribe {VERSION})
+# Untagged means unknown, not mine and not anyone's.
+#
+# THE LONG HEX AT THE END OF EACH HEADER is `@mint:` — that block's identity, minted once
+# when it was captured and never recomputed. The short `#id` at the front is its HANDLE:
+# a prefix of the mint, kept unique within this pile, and what every `@ref:`-style tag
+# points at. Two blocks may say exactly the same thing; they are still two sayings, and
+# the mint is what says so. Do not edit either by hand. (scribe {VERSION})
 """
 
 
 def is_stamped(text):
     return text.lstrip().startswith(STAMP_MARK)
+
+
+def stamp_for(genesis):
+    """The stamp, plus this pile's own birth identity. The genesis line is machine-read
+    (GENESIS_RE) and human-readable, in-band like everything else — no sidecar, no
+    database, no registry. Row 29 refuses registries; this is the alternative it names:
+    let the namespace discriminate, and keep the namespace in the artifact."""
+    return PILE_STAMP + (
+        "#\n"
+        "# THIS PILE'S BIRTH IDENTITY — the `path` half of every @mint: below, and what\n"
+        "# keeps this pile's blocks distinct from every other pile's without any central\n"
+        "# registry. Written once, at birth. Do not edit it; a pile that loses this line\n"
+        "# does not break, but its later blocks are minted on the path alone.\n"
+        f"# @genesis:{genesis}\n")
 
 
 class TagRefused(ValueError):
@@ -337,20 +357,226 @@ def serialize_pile(blocks, tag_form="repeated"):
 # ID + timestamp
 # ---------------------------------------------------------------------------
 
+# A scribe block is a NOMINAL object, not a structural one (ruled 2026-08-01).
+# Two blocks reading `agreed` are two SAYINGS, not one saying stored twice.
+#
+# THE ENCOUNTER THAT EARNED THIS, reproduced on the live machine 2026-08-01 against
+# shipped v1.2.0, through the sanctioned front door:
+#
+#     $ echo "agreed" | scribe capture --ts 2026-08-01T10:00 --source claude --append a.txt
+#     $ echo "agreed" | scribe capture --ts 2026-08-01T10:00 --source claude --append a.txt
+#     $ grep '^@@' a.txt
+#     @@ #a8eb 2026-08-01T10:00 @topic:x @source:claude
+#     @@ #a8eb 2026-08-01T10:00 @topic:x @source:claude     <- the same id, twice
+#
+# `push_view` then keyed `{b.id: b}` and the SECOND block silently captured an edit
+# meant for the first. That is a name collision silently tolerated — the failure Debian
+# ledger row 29 names, and the one §3.8 forbids.
+#
+# WHY THE OLD SCHEME COULD NOT HELP. It hashed `ts + source + body` and truncated to 4
+# hex. Two of those three inputs barely vary (`ts` was minute-resolution; `source` ranges
+# over a handful of hands), so the body was the only wide field — and identical bodies are
+# exactly what a working pile accumulates (the re-confirmation, the second ruling, the
+# "yes" that means something new in a new place). No choice of CONTENT inputs can separate
+# two identical utterances; that is what content-addressing MEANS. The fix is therefore not
+# a wider hash but a different KIND of identity.
+#
+# THE BIFURCATION — the whole of this section:
+#
+#   MINT   the identity. Whole, never truncated, frozen at birth, carried as @mint:.
+#          Takes at least one NON-CONTENT, non-repeating fact about the declaring.
+#   HANDLE the name. Short, typeable, `#a8eb`, what relational tags point at and what
+#          humans read. A prefix of the mint, extended until unique WITHIN THIS PILE.
+#
+# Prior art, unanimous across five systems — every one separates the name you search by
+# from the identity references bind to; scribe alone fused them into one 4-char token:
+#   * gForth `ebook_gforth-manual.txt:2399` — the dictionary returns an execution token
+#     "corresponding to the DEFINITION", not the name; `:2721` — a redefined word leaves
+#     the old definition intact and old references still reach the one they meant, because
+#     they bound to an address. `:2710`/`debugs.fs:152` — the collision is ANNOUNCED.
+#   * Unison `docs/data-types.markdown:7-12` — structural (hash of structure) vs NOMINAL
+#     (a GUID minted at the time of declaration), with syntax to declare which you mean.
+#   * restic `data-safety/DESIGN.md:99,129` + on-disk `data/2b/2b3c15…` — the full hash is
+#     the identity; the 2-char prefix is demoted to a DIRECTORY. Truncate for FILING,
+#     never for IDENTITY.
+#   * Sovereign Pool `tagio.h:44` — `char out_hex[65]`, the whole digest, with the
+#     filename kept separate and renameable.
+#   * Debian ledger row 29 — allow the collision, DECLARE it, let the namespace
+#     discriminate. Explicitly NO global registry, which is why nothing here scans a
+#     directory or keeps a manifest.
+# ---------------------------------------------------------------------------
+
+# The `@mint:` tag carries the identity. It is an ordinary tag in the ordinary tag run —
+# NOT new syntax. The brief's draft header put it between the id and the timestamp; that
+# does not parse (HEADER_RE takes the first bare token after the id as the timestamp), so
+# it sits after the timestamp where the existing grammar already accepts it unchanged.
+MINT_KEY = "mint"
+
+# THE KIND-DECLARATION. A tool that issues identifiers must say which kind it issues, in
+# band, rather than inheriting a default — because an unruled default is indistinguishable
+# from law once it is in the artifact, which is exactly how the old 4-hex id shipped.
+#
+#   nominal     a thing is a thing because it was DECLARED. Two identical declarations are
+#               TWO things, so identity must carry a fact about the declaring.
+#   structural  a thing is what it is made of. Two identical contents are ONE thing, and
+#               identity may honestly be computed from content alone.
+#
+# scribe is NOMINAL: a block is an utterance. A future content-dedup tool over the same
+# piles would declare `structural` and would be right to.
+#
+# This declaration is not decorative — it selects which SIGNATURE TEST the tool must carry
+# and pass (test_scribe.py, TestIdentityKindGuards):
+#   nominal    -> the twins test:  two identical contents, declared twice, must yield two
+#                 DISTINCT identities.
+#   structural -> the dedup test:  identical content must yield the IDENTICAL identity.
+# A tool declaring `nominal` while passing the dedup test is the scribe bug, expressed as a
+# failing assertion. The declaration says what was ruled; the signature test proves the code
+# enacts the ruling; disagreement between them is the drift.
+IDENTITY_KINDS = ("nominal", "structural")
+IDENTITY_KIND = "nominal"
+
+# The supersession pair. Ruled onto opposite blocks, deliberately and for a stated reason
+# (`tagging/TAGS-bench-sheet.md:232`, `:240`):
+#   @superseded:#new  goes on the OLD block — "the person who needs telling is the one who
+#                     wandered into the outdated block." The ONLY tag `push` may write onto
+#                     an existing block, and it touches neither body nor identity.
+#   @replaces:#old    goes on the NEW block — "a rewrite of that block, kept as a separate
+#                     change rather than an edit over the top."
+SUPERSEDED_KEY = "superseded"
+REPLACES_KEY = "replaces"
+
+
+def _tag_value(block, key):
+    """First value for `key` on this block, or None. (A block may carry a key more than
+    once — `@topic:` routinely does — so this is deliberately 'first', not 'the'.)"""
+    for k, v in block.tags:
+        if k == key:
+            return v
+    return None
+
+
+def _insert_before_mint(tags, new_tag):
+    """Place a tag immediately before @mint:, or at the end if the block has none (a
+    legacy block). Keeps the human-facing vocabulary — and any status marker — on the
+    readable side of the 64-hex identity."""
+    for i, (k, _) in enumerate(tags):
+        if k == MINT_KEY:
+            return tags[:i] + [new_tag] + tags[i:]
+    return tags + [new_tag]
+
+# The pile's genesis, written into the stamp at BIRTH and never afterwards. This is the
+# `path` half of the mint: two piles diverge here and can never re-converge, so global
+# uniqueness is a CONSEQUENCE of local history rather than a constraint imposed on top by
+# a registry. In-band and greppable, like everything else scribe relies on.
+GENESIS_RE = re.compile(r"^#\s*@genesis:(?P<hex>[0-9a-f]{64})\s*$", re.M)
+
+# The shortest handle scribe will issue. Historical: the shipped code used exactly 4, and
+# every existing pile is full of 4-char handles, so 4 stays the floor and handles only ever
+# grow from there. NAMED LIMIT (§3.8): the spec's own worked examples
+# (PHASE-0-RECON-AND-PROPOSAL.md:206-215) show SIX characters; the code shipped four and
+# nothing guarded the drift. test_scribe.py now pins this constant against that spec.
+HANDLE_MIN = 4
+
+
 def now_ts():
-    return datetime.now().isoformat(timespec="minutes")
+    """The declaration moment at FULL precision — microseconds, not minutes.
+
+    This is the `act` half of the mint, and the fact the old scheme threw away. It was
+    `timespec="minutes"`, a resolution chosen before any pile existed and never re-checked;
+    two blocks captured in the same minute were indistinguishable to the tool ONLY because
+    the tool had discarded what distinguished them. Knuth's rule for an abbreviated name
+    (`Literate-Programming-Knuth.txt:827`) is "enough text to identify the remainder
+    uniquely" — a truncation licensed BY a check. Neither truncation in this file carried
+    one; this one is simply not taken."""
+    return datetime.now().isoformat(timespec="microseconds")
 
 
-def gen_id(ts, body, source, taken=None):
-    """Short, stable, content-derived id (deterministic → testable). Extends length
-    on the rare collision within a pile rather than silently overwriting (§3.8)."""
+def gen_genesis(ts, abspath):
+    """@identity:nominal — issues a pile's identity from its own declaring.
+
+    Mint a pile's genesis from two NOMINAL facts about the pile's own declaring: when
+    it was born, and where it was born. Deterministic (no randomness, so tests can pin it)
+    and unique without coordination — two piles at one path cannot be born at the same
+    microsecond, because at one path they are one file.
+
+    NAMED LIMIT (§3.8): two piles born on DIFFERENT machines at the same microsecond under
+    the same absolute path would share a genesis. Nothing here detects that. It is named
+    rather than defended against, because defending would need a machine registry and row
+    29 refuses registries."""
+    return hashlib.sha256(f"{ts}\x00{os.path.abspath(abspath)}".encode("utf-8")).hexdigest()
+
+
+def genesis_of(text, path):
+    """Read a pile's genesis out of its own stamp. Returns (genesis_hex, is_declared).
+
+    A pile with no genesis line is LEGACY — every pile that existed before 2026-08-01.
+    Its genesis falls back to the path alone, which still separates piles from each other
+    but carries no birth moment. That is a weaker guarantee and is DISCLOSED at the call
+    site rather than silently substituted (§3.8): a fallback that looks like a real
+    genesis is exactly the kind of absence this project refuses to imply."""
+    m = GENESIS_RE.search(text or "")
+    if m:
+        return m.group("hex"), True
+    return hashlib.sha256(os.path.abspath(path).encode("utf-8")).hexdigest(), False
+
+
+def gen_mint(genesis, ordinal, ts, source, body):
+    """@identity:nominal — issues a block's identity; see IDENTITY_KIND.
+
+    The identity: whole SHA-256, never truncated, frozen into the header at birth.
+
+    THREE non-content facts about the declaring, and they are what make the guarantee:
+
+      genesis  WHICH pile this was declared into  (the `path`)
+      ordinal  WHERE in that pile's arrival order (the `position`)
+      ts       WHEN it was declared               (the `act`)
+
+    `source` and `body` follow as extra entropy and nothing relies on them; `source` in
+    particular was MEASURED as the lowest-entropy field in the old scheme.
+
+    WHY `ordinal` IS NOT OPTIONAL — found by a test, not by reasoning. With `--ts` pinned
+    (which capture supports, and tests need), genesis+ts+source+body ALL collapse for two
+    identical utterances and the mint collided again — the original bug, one layer down.
+    The position cannot collapse: a pile is append-only, so the second saying is at index
+    n+1 however identical it is to the first.
+
+    This is gForth's answer (`ebook_gforth-manual.txt:2399`, `:2721`): a word's identity is
+    its execution token — an ADDRESS in the dictionary — and two identical definitions get
+    two different addresses because `HERE` only ever moves forward. Nothing is computed
+    from the content to achieve it, and nothing needs to be checked.
+
+    NAMED LIMIT (§3.8): the ordinal is read at capture and frozen. Delete a block from the
+    middle of a pile and later blocks' ordinals no longer match their position — the mints
+    stay valid (they are never recomputed) but they stop being re-derivable from the file.
+    Forth has the same property and for the same reason: an address stays what it was."""
+    return hashlib.sha256(
+        f"{genesis}\x00{ordinal}\x00{ts}\x00{source}\x00{body}".encode("utf-8")).hexdigest()
+
+
+def gen_handle(mint, taken=None):
+    """@identity:handle — issues a NAME, never an identity. Kept honest by the
+    converse duty: an identity must not do a name's job either. Nobody types 64 hex,
+    and a system with no short handle grows unofficial ones — so the handle is the
+    sanctioned short form, and its shortness is why it may collide and must be resolved.
+
+    The name: the shortest prefix of the mint, at least HANDLE_MIN, that no other block
+    in THIS PILE already uses.
+
+    This is Knuth's check, at issue time — WEB lets you abbreviate a section name only
+    "after you have given enough text to identify the remainder uniquely", and WEB performs
+    the check. The old `gen_id` took the truncation and left the check behind: it accepted a
+    `taken` set and `make_block` never passed one, so the guard was dead code whose docstring
+    cited §3.8 for a protection the shipped program did not have.
+
+    Handles are extended, never overwritten — a longer handle is a declared, visible
+    consequence of a collision, which is row 29's discipline (allow it, declare it) rather
+    than a silent renaming."""
     taken = taken or set()
-    h = hashlib.sha256(f"{ts}\x00{source}\x00{body}".encode("utf-8")).hexdigest()
-    for n in range(4, len(h)):
-        cand = h[:n]
+    for n in range(HANDLE_MIN, len(mint)):
+        cand = mint[:n]
         if cand not in taken:
             return cand
-    return h
+    return mint
 
 
 # ---------------------------------------------------------------------------
@@ -610,11 +836,90 @@ def loss_check(body, annotations=None):
 # make_block — wire capture -> auditor -> canonical block
 # ---------------------------------------------------------------------------
 
-def make_block(raw_body, tags, source, ts=None, annotations=None):
+def make_block(raw_body, tags, source, ts=None, annotations=None,
+               genesis=None, taken=None, ordinal=0):
+    """Wire capture -> auditor -> canonical block, minting the identity on the way.
+
+    `genesis`, `ordinal` and `taken` are the three facts a block cannot know about itself:
+    which pile it is being declared into, where in that pile's arrival order it lands, and
+    which handles that pile has already issued. The old code asked for none of them, which
+    is precisely why it could mint the same id twice — the caller HAS all three and simply
+    was not passing them."""
     ts = ts or now_ts()
     audited_body, findings = loss_check(raw_body, annotations=annotations)
-    bid = gen_id(ts, audited_body, source)
-    return Block(id=bid, ts=ts, tags=tags, body=audited_body), findings
+    genesis = genesis or gen_genesis(ts, ".")
+    mint = gen_mint(genesis, ordinal, ts, source, audited_body)
+    handle = gen_handle(mint, taken)
+    # @mint: goes LAST in the tag run, and the placement is a ruling, not a detail.
+    # The strongest objection to storing it at all (§4.6 poverty, raised 2026-08-01): a
+    # pile's whole virtue is being readable in an editor with the tool off, and 64 hex per
+    # block is identity noise in front of the human's eyes — the precedents that say "never
+    # truncate" (Sovereign Pool's sidecar filename, restic's repo path) keep their digests
+    # where nobody reads. That objection is REAL and is answered here rather than dismissed:
+    # the human's eye meets the vocabulary it came for — @topic:, @act:, @source: — and the
+    # hash trails off the end of the line, where the handle at the front is its own prefix
+    # and can be checked at a glance. `scribe keys` excludes it and says so.
+    return Block(id=handle, ts=ts, tags=list(tags) + [(MINT_KEY, mint)],
+                 body=audited_body), findings
+
+
+# ---------------------------------------------------------------------------
+# The resolver — the handle branch, and where Knuth's check belongs on LOOKUP.
+#
+# "Enough text to identify uniquely" is a property of LOOKING SOMETHING UP, not of
+# issuing it, so the check lives here as well as at issue time. The two are
+# complementary, not duplicated: gen_handle keeps a pile's OWN handles unambiguous as
+# they are minted; this keeps a handle a HUMAN TYPED from ever resolving to the wrong
+# block. Every existing relational tag in the sovereign's piles is a bare 4-char handle,
+# so both halves are load-bearing.
+#
+# Ambiguity is REFUSED, never guessed. `push_view` used to build `{b.id: b}`, where a
+# duplicate silently overwrote — an edit meant for one block landing on another with no
+# error. Compare gForth (`:2721`): a redefined word leaves the old one reachable and
+# every existing reference still binds to the one it meant. scribe cannot do that yet
+# (it has no address under the name), so where Forth disambiguates, scribe must refuse.
+# ---------------------------------------------------------------------------
+
+class AmbiguousHandle(Exception):
+    """A handle naming more than one block. Carries every match so the refusal can name
+    them all — a refusal that will not say WHICH blocks collided is not actionable."""
+    def __init__(self, handle, matches):
+        self.handle = handle
+        self.matches = matches
+        super().__init__(
+            f"#{handle} names {len(matches)} blocks in this pile "
+            f"({', '.join('#' + b.id + ' ' + b.ts for b in matches)})")
+
+
+def resolve_handle(blocks, handle):
+    """Find the one block a handle names. Returns the Block, or None if there is no match.
+    Raises AmbiguousHandle if more than one block answers.
+
+    Exact match first; failing that, a unique prefix (so a human may type `#a8e` for
+    `#a8eb1c`, git's behaviour and Knuth's rule). A prefix that matches several blocks is
+    ambiguous and is refused with the list, asking for more characters."""
+    handle = handle.lstrip("#")
+    exact = [b for b in blocks if b.id and b.id == handle]
+    if len(exact) == 1:
+        return exact[0]
+    if len(exact) > 1:
+        raise AmbiguousHandle(handle, exact)
+    pref = [b for b in blocks if b.id and b.id.startswith(handle)]
+    if len(pref) == 1:
+        return pref[0]
+    if len(pref) > 1:
+        raise AmbiguousHandle(handle, pref)
+    return None
+
+
+def duplicate_handles(blocks):
+    """Every handle used by more than one block, as {handle: [Block, ...]}. Derived,
+    read-only — the auditor half, which never repairs what it reports (§3.5)."""
+    seen = {}
+    for b in blocks:
+        if b.id:
+            seen.setdefault(b.id, []).append(b)
+    return {h: bs for h, bs in seen.items() if len(bs) > 1}
 
 
 # ---------------------------------------------------------------------------
@@ -866,13 +1171,39 @@ def order_blocks(blocks, recent=False):
     return list(blocks)
 
 
-def render_view(blocks, key, value, recent=False, tag_form="repeated"):
+def is_superseded(block):
+    """Has a later block replaced this one? Read straight off the status tag `push` wrote —
+    no inference, no guessing (§3.3: the tool reports what the file says)."""
+    return any(k == SUPERSEDED_KEY for k, _ in block.tags)
+
+
+def render_view(blocks, key, value, recent=False, tag_form="repeated", current=False):
     """A working view: the matching blocks, each with its `@@ #id` header (the
-    back-link), ready to read, edit, and `push` home. It IS a mini-pile."""
+    back-link), ready to read, edit, and `push` home. It IS a mini-pile.
+
+    SUPERSEDED BLOCKS ARE SHOWN BY DEFAULT and counted separately, never dropped. Since
+    `push` began appending rather than overwriting (2026-08-02), a view can contain both an
+    old saying and the one that replaced it, and a view that silently hid the old one would
+    be an undisclosed exclusion — the failure §3.8 names. `--current` opts into hiding them
+    and the hiding is then declared in the view's own header, in-band, where anyone editing
+    the file will meet it.
+
+    NAMED LIMIT (§3.8): whether `--current` should become the DEFAULT is deliberately NOT
+    decided here. It is a live question at `RIPE-LEDGER.txt#3f02` and belongs to the same
+    gate that rules the rest of the supersession behaviour."""
     chosen = order_blocks(select_blocks(blocks, key, value), recent=recent)
+    n_superseded = sum(1 for b in chosen if is_superseded(b))
+    if current:
+        chosen = [b for b in chosen if not is_superseded(b)]
     header = f"# view {key}:{value}" + ("  (most-recent first)" if recent else "")
     note = ("# derived view — disposable. Edit a body and `scribe push` it home by #id.\n"
             "# the pile is the truth; regenerate this any time.")
+    if n_superseded and current:
+        note += (f"\n# --current: {n_superseded} superseded block(s) HIDDEN from this view. "
+                 f"They are still in the pile.")
+    elif n_superseded:
+        note += (f"\n# {n_superseded} block(s) here carry @superseded: — a later block has "
+                 f"replaced them. Shown, not hidden; use --current to drop them.")
     body = "\n\n".join(serialize_block(b, tag_form) for b in chosen)
     return f"{header}\n{note}\n\n{body}\n", chosen
 
@@ -1036,25 +1367,97 @@ def render_verify_export(manifest, blocks, key, value, recent=False):
     return "\n".join(lines) + "\n"
 
 
-def push_view(view_text, pile_blocks):
+def push_view(view_text, pile_blocks, genesis=None):
     """Push edits made in a working view back into the canonical pile by #id (the
-    detangle round-trip). Updates BODY only — deterministic, id-keyed, never fuzzy
-    (Candidate 4). Tag/timestamp edits are NOT applied here (do them with `tag` or by
-    hand) and any header-tag divergence is DISCLOSED, never silently applied."""
+    detangle round-trip). **APPENDS A SUPERSEDING BLOCK — it never overwrites one.**
+
+    RULED 2026-08-02. `push` used to assign `pb.body = vb.body`, rewriting the pile in
+    place, which made scribe *less append-only than it claimed*: a body could change under
+    a `@ref:` that had been written to the old wording. gForth is the model — you may always
+    edit the source and recompile, but the dictionary never rewrites a definition underneath
+    a reference already bound to it (`ebook_gforth-manual.txt:2721`).
+
+    THE SOVEREIGNTY GROUND, which is why this is not a restriction: *"I can always directly
+    edit a block in a pile if I don't want the history that comes with push — so my
+    sovereignty is enhanced by the choice."* **Two doorways, chosen per act** —
+    history-in-the-pile via `push`, history-in-restic via hand-edit. **The tool binds ITSELF
+    to append-only; it does not bind the human** (§3.1: sovereignty is the axiom, not a
+    feature). A pile is a plain-text file and stays one.
+
+    WHAT IS INVIOLABLE, and it is exactly two things: **bodies and identities.** No existing
+    block's body is ever altered here, and no existing `@mint:` or handle is ever altered or
+    reissued. What push may write onto an existing block is **one declared status tag** —
+    `@superseded:#new` — and nothing else. That is not an overwrite; it is the same act
+    `scribe tag` already performs as a sanctioned verb, and it is what lets **the file itself
+    keep telling the truth**: a human reading the raw pile with no tool meets the mark on the
+    stale block, which is the whole reason the bench sheet rules `@superseded:` onto the OLD
+    block rather than the new (`tagging/TAGS-bench-sheet.md:232` — *"the person who needs
+    telling is the one who wandered into the outdated block"*). Deriving that warning instead
+    (via `backlinks`) would have been purer and would have cost the tool-off-readable
+    invariant; between two stated invariants, legibility was ruled to win.
+
+    The new block carries `@replaces:#old` (`:240`) and inherits the old block's tags, so it
+    appears in every view the old one did. Tag edits made in the view are still NOT applied —
+    disclosed, as before."""
     view_blocks = [b for b in parse_pile(view_text) if b.id]
-    by_id = {b.id: b for b in pile_blocks}
-    updated, missing, tag_drift = [], [], []
+    # AMBIGUITY IS CHECKED BEFORE ANYTHING IS TOUCHED, and it aborts the whole push.
+    # This was `{b.id: b}` — a dict, so a duplicate handle silently overwrote and the
+    # LAST block won, quietly receiving an edit meant for the first. Nothing announced
+    # it. §3.6: silent failure is the cardinal engineering sin, and this was silent
+    # WRONG-TARGET WRITING, which is worse than a silent no-op.
+    dupes = duplicate_handles(pile_blocks)
+    ambiguous = sorted({vb.id for vb in view_blocks if vb.id in dupes})
+    blank = {"superseded": [], "missing": [], "tag_drift": [], "ambiguous": {},
+             "already_superseded": []}
+    if ambiguous:
+        return pile_blocks, dict(blank, ambiguous={h: dupes[h] for h in ambiguous})
+
+    genesis = genesis or gen_genesis(now_ts(), ".")
+    taken = {b.id for b in pile_blocks if b.id}
+    ordinal = len([b for b in pile_blocks if b.id])
+    superseded, missing, tag_drift, already = [], [], [], []
+    appended = []
+
     for vb in view_blocks:
-        pb = by_id.get(vb.id)
+        pb = resolve_handle(pile_blocks, vb.id)
         if pb is None:
             missing.append(vb.id)
             continue
         if vb.tags and vb.tags != pb.tags:
             tag_drift.append(vb.id)
-        if vb.body != pb.body:
-            pb.body = vb.body
-            updated.append(vb.id)
-    return pile_blocks, {"updated": updated, "missing": missing, "tag_drift": tag_drift}
+        if vb.body == pb.body:
+            continue
+        # A block already superseded must not be superseded again from a stale view —
+        # two pushes of the same view would otherwise fork the chain silently.
+        prior = [v for k, v in pb.tags if k == SUPERSEDED_KEY]
+        if prior:
+            already.append((pb.id, prior[0].lstrip("#")))
+            continue
+        ts = now_ts()
+        mint = gen_mint(genesis, ordinal, ts, _tag_value(pb, "source") or "unknown", vb.body)
+        handle = gen_handle(mint, taken)
+        taken.add(handle)
+        ordinal += 1
+        # The new block inherits the old block's vocabulary so it appears in every view the
+        # old one did — a supersession that fell out of its own topic would be a silent loss.
+        # Its own identity is minted fresh; the old @mint: is never copied or reissued.
+        carried = [(k, v) for k, v in pb.tags
+                   if k not in (MINT_KEY, SUPERSEDED_KEY, REPLACES_KEY)]
+        appended.append(Block(id=handle, ts=ts,
+                              tags=carried + [(REPLACES_KEY, f"#{pb.id}"),
+                                              (MINT_KEY, mint)],
+                              body=vb.body))
+        # THE ONE PERMITTED WRITE onto an existing block: a status tag. Its body and its
+        # identity are not touched, and this is asserted directly in the guard-set.
+        # It is placed BEFORE @mint:, deliberately — a status marker parked after 64 hex
+        # characters is a status marker nobody reads, and the entire reason this is written
+        # into the file rather than derived is that a tool-off reader must MEET it.
+        pb.tags = _insert_before_mint(pb.tags, (SUPERSEDED_KEY, f"#{handle}"))
+        superseded.append((pb.id, handle))
+
+    return pile_blocks + appended, dict(
+        blank, superseded=superseded, missing=missing, tag_drift=tag_drift,
+        already_superseded=already)
 
 
 def add_tags(blocks, block_id, add=None, remove=None):
@@ -1062,14 +1465,26 @@ def add_tags(blocks, block_id, add=None, remove=None):
     header line; this is the named-verb convenience (§3.9). Returns (ok, block)."""
     add = add or []
     remove = set(remove or [])
-    for b in blocks:
-        if b.id == block_id:
-            b.tags = [(k, v) for (k, v) in b.tags if f"{k}:{v}" not in remove]
-            for (k, v) in add:
-                if (k, v) not in b.tags:
-                    b.tags.append((k, v))
-            return True, b
-    return False, None
+    # This scanned for the FIRST block whose id matched, while push_view's dict kept the
+    # LAST — so on a duplicate handle the two verbs silently disagreed about which block
+    # they meant. Both now go through the one resolver, which refuses rather than picks.
+    b = resolve_handle(blocks, block_id)
+    if b is None:
+        return False, None
+    # The identity is not editable vocabulary. Removing @mint: by hand would strip a
+    # block's identity while leaving it looking intact — an absence that does not announce
+    # itself (§3.8). Refused on the write side, where validate_tag's refusals already live.
+    if any(r.split(":", 1)[0] == MINT_KEY for r in remove) or \
+       any(k == MINT_KEY for k, _ in add):
+        raise TagRefused(
+            f"@{MINT_KEY}: is the block's identity, not vocabulary — it is minted once at "
+            f"capture and never edited. Tag something else, or edit the pile by hand if "
+            f"you truly mean to break the identity.")
+    b.tags = [(k, v) for (k, v) in b.tags if f"{k}:{v}" not in remove]
+    for (k, v) in add:
+        if (k, v) not in b.tags:
+            b.tags.append((k, v))
+    return True, b
 
 
 # ---------------------------------------------------------------------------
@@ -1190,8 +1605,37 @@ def cmd_capture(args):
     else:
         body = capture_plaintext(text)
 
-    block, findings = make_block(body, tags, source, ts=args.ts, annotations=annotations)
+    # A block cannot know which pile it is being declared into, nor which handles that
+    # pile has already issued. Capture DOES know both, and used to pass neither.
+    genesis, taken, legacy, ordinal = None, set(), False, 0
+    if args.append:
+        existing = ""
+        if _pile_exists_nonempty(args.append):
+            with open(args.append, "r", encoding="utf-8") as fh:
+                existing = fh.read()
+        if existing:
+            genesis, declared = genesis_of(existing, args.append)
+            legacy = not declared
+            prior = [b for b in parse_pile(existing) if b.id]
+            taken = {b.id for b in prior}
+            ordinal = len(prior)     # this saying is the (n+1)th declared into this pile
+        else:
+            genesis = gen_genesis(args.ts or now_ts(), args.append)
+
+    block, findings = make_block(body, tags, source, ts=args.ts, annotations=annotations,
+                                 genesis=genesis, taken=taken, ordinal=ordinal)
     out = serialize_block(block, tag_form=args.tag_form)
+
+    if legacy:
+        sys.stderr.write(
+            f"  NOTE: {args.append} carries no @genesis: line (a pile born before "
+            f"2026-08-01). Its mints fall back to the pile's PATH alone — still distinct "
+            f"from other piles, but carrying no birth moment. Run `scribe stamp` on a "
+            f"pile you have unstamped, or leave it: nothing is upgraded behind you.\n")
+    if len(block.id) > HANDLE_MIN:
+        sys.stderr.write(
+            f"  NOTE: handle extended to #{block.id} ({len(block.id)} chars) — a shorter "
+            f"one was already taken in this pile. Declared, not renamed away.\n")
 
     if args.append:
         # A pile is stamped at BIRTH only — never bolted onto an existing one, so that
@@ -1200,7 +1644,7 @@ def cmd_capture(args):
         stamped = False
         if not args.no_stamp and not _pile_exists_nonempty(args.append):
             with open(args.append, "w", encoding="utf-8") as fh:
-                fh.write(PILE_STAMP)
+                fh.write(stamp_for(genesis))
             stamped = True
         with open(args.append, "a", encoding="utf-8") as fh:
             fh.write(("\n\n" if _needs_sep(args.append) else "") + out + "\n")
@@ -1231,7 +1675,7 @@ def cmd_stamp(args):
     already-stamped pile it reports and changes nothing — it never rewrites a stamp
     the human may have edited."""
     if args.show:
-        sys.stdout.write(PILE_STAMP)
+        sys.stdout.write(stamp_for("<minted at the pile's birth>"))
         return 0
     with open(args.pile, "r", encoding="utf-8") as fh:
         text = fh.read()
@@ -1239,7 +1683,12 @@ def cmd_stamp(args):
         sys.stderr.write(f"{args.pile} is already stamped — unchanged\n")
         return 0
     _refuse_if_malformed(text, args.pile)
-    _atomic_write(args.pile, PILE_STAMP + "\n" + text.lstrip("\n"))
+    # A retro-fitted pile is given a genesis NOW, and the timestamp says so honestly: it
+    # records when this pile was declared to scribe, not when the human started it. Blocks
+    # already in the pile keep the handles they have — nothing is re-minted (see
+    # `scribe duplicates`), because re-minting would break every relational tag pointing in.
+    _atomic_write(args.pile,
+                  stamp_for(gen_genesis(now_ts(), args.pile)) + "\n" + text.lstrip("\n"))
     sys.stderr.write(f"{args.pile} stamped — {len(PILE_STAMP.splitlines())} comment "
                      f"lines added above the first block; no block was touched\n")
     return 0
@@ -1311,11 +1760,22 @@ def cmd_keys(args):
     text = _read_input(args.pile)
     blocks = parse_pile(text)
     per_key = {}
+    n_mint = 0
     for b in blocks:
         for k, v in b.tags:
+            # @mint: is structural identity, not vocabulary: one distinct value per block,
+            # so listing it would bury the actual vocabulary under a wall of hashes. It is
+            # EXCLUDED and the exclusion is ANNOUNCED — an undisclosed exclusion is the
+            # real failure, and this report exists to show what the vocabulary has become.
+            if k == MINT_KEY:
+                n_mint += 1
+                continue
             per_key.setdefault(k, Counter())[v] += 1
     if not per_key:
         sys.stdout.write("(no tags in this pile)\n")
+    if n_mint:
+        sys.stdout.write(f"(@{MINT_KEY}: excluded — {n_mint} block identit(ies), one per "
+                         f"block, not vocabulary. `scribe blocks` shows them.)\n")
     for k in sorted(per_key, key=lambda k: (-sum(per_key[k].values()), k)):
         vals = per_key[k]
         retired = f"   [RETIRED — replaced by @{RETIRED_KEYS[k]}:]" if k in RETIRED_KEYS else ""
@@ -1362,10 +1822,11 @@ def cmd_view(args):
     blocks = parse_pile(text_in)
     key, value = _selector(args.selector)
     recent = args.recent
-    text, chosen = render_view(blocks, key, value, recent=recent, tag_form=args.tag_form)
+    text, chosen = render_view(blocks, key, value, recent=recent,
+                               tag_form=args.tag_form, current=args.current)
     sys.stdout.write(text)
     sys.stderr.write(f"{len(chosen)} block(s) in view {key}:{value} "
-                     f"({_order_note(recent)})\n")
+                     f"({_order_note(recent)}{', current only' if args.current else ''})\n")
     _note_retired_selector(key)
     bad = _announce_malformed(text_in, args.pile)
     return EXIT_FINDINGS if bad else 0
@@ -1402,6 +1863,63 @@ def cmd_backlinks(args):
     back = compute_backlinks(piles)
     sys.stdout.write(render_backlinks(target_pile, target_id, back, same_pile_label))
     return EXIT_FINDINGS if bad_total else 0
+
+
+def cmd_duplicates(args):
+    """`scribe duplicates PILE [PILE...]` — every handle used by more than one block.
+
+    The auditor half, and Phase 3 of the identity work: duplicates ALREADY EXIST in real
+    piles and must not be repaired by the tool. Re-minting them would change ids that
+    relational tags already point at, silently breaking the pointer graph to fix a naming
+    problem — so this reports and changes nothing (§3.5, actor/auditor). Row 29 exactly:
+    allow the collision, DECLARE it, let the human rule.
+
+    Blocks minted before 2026-08-01 carry no @mint:, and are named as legacy rather than
+    presented as though they carried an identity they do not have (§3.8)."""
+    total = 0
+    legacy_total = 0
+    bad_total = 0
+    for path in args.pile:
+        text_in = _read_input(path)
+        blocks = parse_pile(text_in)
+        bad_total += _announce_malformed(text_in, path)
+        _, declared = genesis_of(text_in, path)
+        dupes = duplicate_handles(blocks)
+        legacy = [b for b in blocks if b.id and not dict(b.tags).get(MINT_KEY)]
+        legacy_total += len(legacy)
+        real = sum(1 for b in blocks if b.id)
+        sys.stdout.write(f"{path} — {real} block(s), {len(dupes)} duplicated handle(s)"
+                         f"{'' if declared else ', NO @genesis: line (legacy pile)'}\n")
+        if legacy:
+            sys.stdout.write(
+                f"  {len(legacy)} block(s) carry no @mint: — minted before the identity "
+                f"split. Named, not upgraded: nothing here rewrites them.\n")
+        for h in sorted(dupes):
+            bs = dupes[h]
+            sys.stdout.write(f"  #{h} — {len(bs)} blocks\n")
+            for b in bs:
+                mint = dict(b.tags).get(MINT_KEY)
+                shown = f"{mint[:16]}…" if mint else "no @mint: (legacy)"
+                first = (b.body.splitlines() or [""])[0][:60]
+                sys.stdout.write(f"      {b.ts}  {shown}  {first!r}\n")
+            mints = {dict(b.tags).get(MINT_KEY) for b in bs}
+            if len(mints) == 1 and None in mints:
+                sys.stdout.write(
+                    "      ^ all legacy: whether these are one saying or two cannot be "
+                    "decided by the tool. Yours to rule.\n")
+            elif len(mints) == len(bs):
+                sys.stdout.write(
+                    "      ^ distinct @mint:s — these ARE different sayings that happen "
+                    "to share a handle. Lengthen one handle by hand to disambiguate.\n")
+        total += len(dupes)
+    if not total:
+        sys.stdout.write("no duplicated handles\n")
+    if legacy_total:
+        sys.stdout.write(
+            f"\n{legacy_total} legacy block(s) across all piles. They are not broken and "
+            f"are not upgraded: a handle that has worked since capture keeps working, and "
+            f"re-minting would break every relational tag pointing at it.\n")
+    return EXIT_FINDINGS if (total or bad_total) else 0
 
 
 def cmd_activate(args):
@@ -1482,18 +2000,58 @@ def cmd_push(args):
         pile_text = fh.read()
     _refuse_if_malformed(pile_text, args.pile)
     pile_blocks = parse_pile(pile_text)
-    pile_blocks, report = push_view(view_text, pile_blocks)
+    genesis, declared = genesis_of(pile_text, args.pile)
+    pile_blocks, report = push_view(view_text, pile_blocks, genesis=genesis)
+    if not declared and report["superseded"]:
+        sys.stderr.write(
+            f"  NOTE: {args.pile} carries no @genesis: line (a pile born before 2026-08-01); "
+            f"the superseding block's mint falls back to the pile's PATH alone.\n")
+    if report.get("ambiguous"):
+        sys.stderr.write(
+            f"REFUSED: nothing written to {args.pile}. "
+            f"{len(report['ambiguous'])} handle(s) in this view name more than one block "
+            f"in the pile, so there is no way to know which block your edit belongs to:\n")
+        for h, bs in report["ambiguous"].items():
+            sys.stderr.write(f"  #{h} names {len(bs)} blocks:\n")
+            for b in bs:
+                mint = dict(b.tags).get(MINT_KEY, "(no @mint: — a legacy block)")
+                first = (b.body.splitlines() or [""])[0][:60]
+                sys.stderr.write(f"      {b.ts}  {mint[:16]}…  {first!r}\n")
+        sys.stderr.write(
+            "  These are pre-existing duplicates; nothing is re-minted, because that would\n"
+            "  break every relational tag pointing at them (row 29: declare the collision,\n"
+            "  do not rename it away). Run `scribe duplicates PILE` for the full report,\n"
+            "  then disambiguate by hand — the ruling is yours.\n")
+        return 1
     # Write the pile back only if something changed; disclose everything (§3.7).
-    if report["updated"]:
+    if report["superseded"]:
         _atomic_write(args.pile, serialize_pile(pile_blocks))
-    sys.stderr.write(f"pushed home: {len(report['updated'])} block(s) updated "
-                     f"({', '.join('#'+i for i in report['updated']) or 'none'})\n")
+    n = len(report["superseded"])
+    sys.stderr.write(
+        f"pushed home: {n} block(s) superseded — nothing was overwritten\n"
+        if n else "pushed home: nothing changed (no body differed)\n")
+    for old, new in report["superseded"]:
+        sys.stderr.write(f"  #{old} -> #{new}   (#{old} keeps its body and its @mint:, and "
+                         f"gains one tag: @superseded:#{new})\n")
+    if n:
+        sys.stderr.write(
+            "  The old blocks are still there and still say what they said. To correct one\n"
+            "  WITHOUT leaving that history in the pile, edit it directly in your editor —\n"
+            "  restic keeps that history instead. Both doors are yours; this one is push's.\n")
+    if report["already_superseded"]:
+        sys.stderr.write(
+            f"  SKIPPED {len(report['already_superseded'])} block(s) already superseded — "
+            f"your view is stale, and pushing it would fork the chain:\n")
+        for old, by in report["already_superseded"]:
+            sys.stderr.write(f"      #{old} was superseded by #{by}. Regenerate the view and "
+                             f"edit #{by} instead.\n")
     if report["missing"]:
         sys.stderr.write(f"  WARNING: {len(report['missing'])} view block(s) had no "
                          f"matching #id in the pile: {', '.join('#'+i for i in report['missing'])}\n")
     if report["tag_drift"]:
         sys.stderr.write(f"  NOTE: header tags differ for {', '.join('#'+i for i in report['tag_drift'])}"
-                         " — NOT applied (use `tag` or edit the pile); body only was pushed\n")
+                         " — NOT applied (use `tag` or edit the pile); the superseding block "
+                         "inherits the OLD block's tags\n")
     return 0
 
 
@@ -1507,7 +2065,12 @@ def cmd_tag(args):
         notes.extend(validate_tag("source", args.source))
         add.append(("source", args.source))
     _emit_tag_notes(notes)
-    ok, b = add_tags(blocks, args.id.lstrip("#"), add=add, remove=args.remove)
+    try:
+        ok, b = add_tags(blocks, args.id.lstrip("#"), add=add, remove=args.remove)
+    except AmbiguousHandle as e:
+        sys.stderr.write(f"REFUSED: nothing written to {args.pile}. {e}\n")
+        sys.stderr.write("  Type more characters, or run `scribe duplicates PILE`.\n")
+        return 1
     if not ok:
         sys.stderr.write(f"no block with id #{args.id.lstrip('#')}\n")
         return 1
@@ -1575,6 +2138,9 @@ def build_parser():
     v = sub.add_parser("view", help="derive a working view (topic:/state:) from the pile")
     v.add_argument("selector", help="key:value, e.g. topic:nas or state:live")
     v.add_argument("pile")
+    v.add_argument("--current", action="store_true",
+                   help="hide blocks a later block has superseded (declared in the view "
+                        "header; they stay in the pile)")
     v.add_argument("--recent", action="store_true", help="most-recent first (salience)")
     v.add_argument("--tag-form", choices=["repeated", "comma"], default="repeated")
     v.set_defaults(func=cmd_view)
@@ -1586,6 +2152,12 @@ def build_parser():
     bl.add_argument("target", help="#id (this pile) or pile.txt#id (a named pile)")
     bl.add_argument("pile", nargs="+", help="one or more piles to search across")
     bl.set_defaults(func=cmd_backlinks)
+
+    dp = sub.add_parser("duplicates",
+                        help="report handles used by more than one block — read-only; "
+                             "declares collisions, never repairs them")
+    dp.add_argument("pile", nargs="+", help="one or more piles to audit")
+    dp.set_defaults(func=cmd_duplicates)
 
     ac = sub.add_parser("activate",
                         help="derive every block currently declaring interest in a "

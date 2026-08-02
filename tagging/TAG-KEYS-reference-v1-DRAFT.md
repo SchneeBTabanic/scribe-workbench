@@ -553,3 +553,120 @@ text should now record this attempt is a ruling left to the sovereign, named rat
 silently done. Full writeup: `RIPE-LEDGER.txt` (this session's entry); provenance:
 `PROVENANCE.md` v1.2.0.
 
+
+## A.11 — The identity ruling, and the two rows above it that are now enacted in code (2026-08-01/02)
+
+**This section RATIFIES and UPDATES two earlier rows rather than replacing them** — A.2's
+`@superseded:` and A.4's `@replaces:` — per §A.7's discipline of keeping the reasoning and
+appending the resolution. Both are left standing above, unedited; what follows is what happened
+to them.
+
+**The encounter.** Reproduced on the live machine against shipped scribe v1.2.0: `gen_id` hashed
+a block's timestamp, source and body and truncated to four hex. Two blocks saying the same thing,
+captured in the same minute from the same hand, received the **same id** — deterministically, not
+by chance — and `push_view`, keyed `{b.id: b}`, then delivered an edit meant for one to the other,
+silently. `add_tags` scanned for the *first* match while `push` kept the *last*, so two verbs
+disagreed in silence about which block an id named.
+
+**The reframe, and it is the part worth carrying into any tagging question.** The defect was not
+the hash width. Unison ships both kinds of type and makes the author say which
+(`docs/data-types.markdown:7-12`): a **structural** thing is what it is made of, so two identical
+structures are one thing and identity may honestly be computed from content; a **nominal** thing is
+a thing because it was **declared**, so two identical declarations are two things and identity must
+carry some fact about the declaring that no amount of content can supply. **A block is an utterance
+— nominal — and scribe was identifying it structurally**, thereby asserting that two sayings were
+one saying. No hash width repairs that assertion, and `taken`-style collision extension only papers
+over it. The tag-sheet consequence: **the question "what should a key be?" has a sibling — "what
+kind of thing is the thing this key names?"** A key naming a *saying* and a key naming a *content*
+want different identity behaviour, and the choice is a ruling to be written down, never a default
+to be inherited.
+
+**Prior art, unanimous, and all of it already inside this project before the bug was found** —
+five systems had made the opposite ruling and scribe was the sole outlier:
+
+| system | the split it already had | cite |
+|---|---|---|
+| gForth | the execution token is an **address** in the dictionary; the name is a separate field, and a redefinition leaves old references bound to the definition they meant | `ebook_gforth-manual.txt:2399, 2710, 2721` |
+| Unison | names are a revisable map over content-addressed definitions — *"the stars exist independently of what we choose to call them"*; `add` on an existing name is a **conflict**, never a silent collapse | `codebase-editor-design.markdown:23, 82` |
+| restic | the whole digest is the identity; the two-character prefix is demoted to a **directory** — truncate for filing, never for identity | `data-safety/DESIGN.md:99, 110, 129` |
+| Sovereign Pool | `char out_hex[65]` — the whole digest, filename kept separate and renameable | `tagio.h:44` |
+| Knuth | a section name may be abbreviated *"after you have given **enough text to identify the remainder uniquely**"* — the truncation is licensed **by the check** | `Literate-Programming-Knuth.txt:827` |
+| Debian, row 29 | allow the collision, **declare** it, let the namespace discriminate — explicitly **no** global registry | `LEDGER-debian-pillars.md:47` |
+
+Row 29 had been mined, counted and ledgered since 2026-07-26 and never became law, which is why
+scribe was never corrected by it — a *confirmed-and-unapplied* finding, which is a fourth state
+the ripeness vocabulary (confirmed / superseded / unchecked) has no name for.
+
+**Ratified as Charter §3.16 and §3.17** (2026-08-01, `GATE-H_charter-ratifications-identity-and-
+name-collision.md`). §3.16: say whether a thing is structural or nominal, and keep the name apart
+from the identity **both ways** — never let a name do an identity's job, and never let an identity
+do a name's, because a system issuing no short handle grows unofficial ones. §3.17: a name
+collision is licensed and **declared**, never silently tolerated and never renamed away; it is
+downstream of §3.16, which is why it is numbered second.
+
+**Built as scribe v1.3.0 — the split, in the terms this sheet cares about:**
+
+| | what it is | where it lives | who points at it |
+|---|---|---|---|
+| **handle** `#a8eb` | the **name** — shortest prefix of the mint that no other block in **this pile** holds | the `#id` at the front of the header | every `@ref:`/`@overrules:`/`@superseded:`-style tag value on this sheet |
+| **mint** `@mint:` | the **identity** — whole SHA-256, never truncated, frozen at capture | an ordinary tag, **last** in the tag run | nothing |
+
+Three points a tag-writer actually needs:
+
+1. **`@mint:` is not vocabulary.** It is refused by `scribe tag`, excluded from `scribe keys` with
+   a notice, and placed last so the human's eye meets the vocabulary first. That placement answers
+   the §4.6 poverty objection — 64 hex per header in a file whose whole virtue is being readable
+   in an editor is a real cost, argued rather than dismissed.
+2. **The mint is taken from three non-content facts about the declaring** — `genesis` (which pile,
+   written into the stamp at birth), `ordinal` (where in that pile's arrival order), `ts` (when, to
+   the microsecond). **`ordinal` was found by a failing test, not by reasoning:** with `--ts`
+   pinned, genesis+ts+source+body all collapse for two identical utterances and the mint collided
+   again, one layer down. Position cannot collapse, because a pile is append-only. This is gForth's
+   `HERE`, and it is also the standing refutation of the cheaper "just raise the timestamp
+   precision, add no field" proposal — there is a test that proves it
+   (`test_full_precision_ts_ALONE_is_not_sufficient`).
+3. **Ambiguity is refused, never guessed.** `push` and `tag` both go through one resolver; on an
+   ambiguous handle they write **nothing** and name every candidate. New read-only verb
+   `scribe duplicates` declares collisions and never repairs them — re-minting would change ids
+   that the relational tags on this sheet already point at, which is row 29's discipline exactly.
+   Legacy blocks (captured before the split, no `@mint:`) are **named, never upgraded**.
+
+**Built as scribe v1.3.1 — and this is what updates A.2 and A.4.** `push` no longer overwrites a
+block; it **appends** a superseding one. A.2's `@superseded:` row ruled the direction (*put it on
+the superseded block* — maint-guide announces its own supersession eleven times so a reader
+entering at any point is told *there*; F8's live-need-in-the-receiving-organ argument). That ruling
+is now **enacted by the tool**: `push` writes `@superseded:#new` onto the old block — the only tag
+it may add to an existing block, at most one, touching neither body nor identity — and
+`@replaces:#old` onto the new one, which is A.4's row (Knuth's change file: *"you never actually
+change the master file"*). The new block inherits the old block's vocabulary, so a supersession
+cannot fall out of the view it was pushed from.
+
+Two things about that worth keeping on this sheet:
+
+- **It is written, not derived, and the trade was made deliberately.** A.4's own note says
+  back-references are derived, never hand-written, and `backlinks` (A.9) could have produced this
+  warning for free. Deriving it would have been purer **and would have cost the tool-off-readable
+  invariant** — a human opening the raw pile in an editor would meet no mark on the stale block,
+  which is precisely the reader A.2's row exists to protect. Between two stated invariants,
+  legibility was ruled to win. `backlinks` still finds the pair, from either end.
+- **Placement is part of the ruling.** The status tag is inserted **before** `@mint:`, because a
+  marker parked behind sixty-four characters of hex is a marker nobody reads, and being read is
+  the only reason it is in the file at all. A test pins the order.
+
+**The sovereignty ground, which is why none of this is a restriction.** *"I can always directly
+edit a block in a pile if I don't want the history that comes with push … so my sovereignty is
+enhanced by the choice."* **Two doorways, chosen per act** — history-in-the-pile via `push`,
+history-in-restic via hand-edit. The tool binds **itself** to append-only; it does not bind the
+human (§3.1). gForth again: you may always edit the source and recompile; what you may not have is
+the dictionary rewriting a definition underneath a reference already bound to it.
+
+**Named limits, so the absence is deliberate (§3.8):** `view` discloses supersession chains in its
+own header and `--current` opts into hiding them while declaring the hiding — but **`toc` and
+`export` do not filter superseded blocks and have no `--current`**, so an export of a pushed-to
+selector carries both wordings. Whether `--current` should become the *default* for `view` is
+likewise still unruled. And the ordinal is frozen at capture: delete a block from the middle of a
+pile and later mints stay valid but stop being re-derivable from the file — Forth has the same
+property, for the same reason.
+
+Full writeup: `RIPE-LEDGER.txt` `#8a29` (the case), `#d100` (the ratification), `#3f02` → `#2b30`
+(the append-and-supersede ruling and its build); provenance: `PROVENANCE.md` v1.3.0 and v1.3.1.

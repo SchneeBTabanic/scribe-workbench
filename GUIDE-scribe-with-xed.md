@@ -94,19 +94,48 @@ internalise:
 | what it is | the **truth** — every block, in arrival order | a **disposable** filter of the pile |
 | how many | **one**, forever | as many as you like, thrown away freely |
 | do you edit it? | rarely, and carefully | **yes — this is where you work** |
-| how edits get home | — | `scribe push nas.view pile.txt` (by `#id`) |
+| how edits get home | — | `scribe push nas.view pile.txt` — matched by `#id`, landed as a new block |
 | lose it? | back it up; it's everything | shrug — `scribe view …` rebuilds it |
 
 The block header looks like this and is plain text you can read with Scribe switched off:
 
 ```
-@@ #c98b 2026-07-07T19:48 @act:protect-against-bit-rot @path:toward-integrity-over-convenience
-   @aspect:manifested @topic:nas @topic:zfs @source:gemini
+@@ #c98b 2026-07-07T19:48:03.112904 @act:protect-against-bit-rot @topic:nas @source:gemini @mint:c98b4f1a…64 hex…
 ZFS vs ext4: use ZFS on the NAS for checksums and snapshots.
 ```
 
-`@@` starts a block; `#c98b` is its permanent id; the `@key:value` tags are what views
-filter on. Everything after the header line, until the next `@@`, is your verbatim text.
+`@@` starts a block; `#c98b` is its **handle**; the `@key:value` tags are what views filter
+on. Everything after the header line, until the next `@@`, is your verbatim text.
+
+**Two names on that line, doing two different jobs (new in v1.3.0).** This is worth one
+minute, because it changes what you can safely type:
+
+| | | |
+|---|---|---|
+| `#c98b` at the front | the **handle** — the short name | yours to type, and what every `@ref:`-style tag points at |
+| `@mint:c98b4f1a…` at the end | the **identity** — a whole 64-character fingerprint | nobody types it; nothing points at it; **never edit it** |
+
+Why two? Because a name and an identity want opposite things. A name must be short enough to
+type — and therefore short enough that two blocks could want the same one. An identity must
+be long enough that they never can. One four-character token was doing both jobs, and it
+broke: two blocks saying the same thing on the same minute got the *same* id, and a push then
+landed an edit on the wrong one. The fix is not a longer id; it is **two fields**.
+
+The practical upshot, in four lines:
+
+- **The handle can grow.** If `#c98b` were already taken, capture would issue `#c98b1` and
+  tell you so. It is never renamed afterwards.
+- **You can abbreviate a handle**, git-style: `scribe tag c98 pile.txt …` works if `c98`
+  names exactly one block. If it names two, scribe **refuses and lists them** instead of
+  guessing — type another character.
+- **A block's identity says two identical sayings are two sayings**, not one stored twice.
+  That is the whole reason the mint is not computed from what the block says.
+- **Piles made before 2026-08-01 have no mints.** They are not broken and are not upgraded
+  behind you; `scribe duplicates pile.txt` names them as legacy. See the end of this guide.
+
+The mint is 64 characters of hex on the end of every header, and yes, it is ugly. It sits
+**last** on purpose: your eye meets the vocabulary you came for — `@topic:`, `@act:`,
+`@source:` — and the hash trails off the end of the line where you can ignore it.
 
 **Which tags to write is a separate sheet, deliberately.** Scribe accepts *any* `@key:value` —
 there is no list of approved keys in the code — so the vocabulary is a discipline you keep, not
@@ -164,7 +193,7 @@ block, and get it into the pile. Two ways, depending on whether you'd rather han
 little file (or just save the whole tab), then:
 
 ```bash
-scribe capture zfs-note.txt --topic nas --topic zfs --state live --source gemini --append pile.txt
+scribe capture zfs-note.txt --topic nas --topic zfs --tag aspect:manifesting --source gemini --append pile.txt
 ```
 
 Scribe cleans it into a block, stamps the arrival time, and appends it to the pile. It
@@ -182,16 +211,18 @@ sudo apt install xsel        # one time only
 Then, after selecting-and-copying the block in xed:
 
 ```bash
-xsel -b | scribe capture --topic nas --topic zfs --state live --source gemini --append pile.txt
+xsel -b | scribe capture --topic nas --topic zfs --tag aspect:manifesting --source gemini --append pile.txt
 ```
 
 (`xclip -selection clipboard -o | scribe capture …` works identically if you have `xclip`
 instead.) Path B is the closest thing to "grab from xed, drop in the pile" in one motion.
 
 **Tagging is yours, and only yours.** Scribe will never guess a topic for you (that's the
-sovereignty line it won't cross). The `--topic`/`--state` flags are you telling it what the
+sovereignty line it won't cross). The `--topic`/`--tag` flags are you telling it what the
 block *is*. A block with no topic just lives in arrival order and shows up in no topic view
 — which is fine; tag it later with `scribe tag c98b pile.txt --topic nas` when you decide.
+(One tag is not yours: `scribe tag … --tag mint:…` is **refused**. The identity is minted
+once, at capture, and is not vocabulary.)
 
 Repeat, block by block, whenever you're already touching that material. There's no
 "migration day" — the pile fills as you work.
@@ -229,10 +260,76 @@ their way home). Save the file in xed as usual.
 scribe push nas.view pile.txt
 ```
 
-Scribe matches each block by its `#id` and updates **only** those blocks in the pile —
-`pushed home: 1 block(s) updated (#c98b)`. The git block you didn't touch stays untouched.
-The thought you developed in the view is now in the canonical pile, in the right place, and
-you can delete `nas.view` without a second thought.
+Scribe matches each block by its `#id` and — **as of v1.3.1** — *appends* your edited version
+as a new block rather than writing over the old one. (The output below is from a real run, so
+its handles are real too; yours will differ.)
+
+```
+pushed home: 1 block(s) superseded — nothing was overwritten
+  #2ea7 -> #b344   (#2ea7 keeps its body and its @mint:, and gains one tag: @superseded:#b344)
+  The old blocks are still there and still say what they said. To correct one
+  WITHOUT leaving that history in the pile, edit it directly in your editor —
+  restic keeps that history instead. Both doors are yours; this one is push's.
+```
+
+The router block you didn't touch stays untouched. The thought you developed in the view is
+now in the canonical pile and you can delete `nas.view` without a second thought.
+
+**This is the one change most worth internalising, so here is what the pile actually looks
+like afterwards.** Your edit did not replace anything. There are now two blocks:
+
+```
+@@ #2ea7 …  @topic:nas @source:gemini @superseded:#b344 @mint:2ea7…
+ZFS vs ext4: use ZFS on the NAS for checksums and snapshots.       ← untouched, and marked stale
+
+@@ #b344 …  @topic:nas @source:gemini @replaces:#2ea7 @mint:b344…
+ZFS vs ext4: use ZFS on the NAS for checksums and snapshots.
+Also: scrub monthly.                                               ← your edit, as its own block
+```
+
+Four things follow, and they are all things you will meet in a normal week:
+
+- **The old block keeps its words.** Push never rewrites a body and never reissues an
+  identity. The only mark it may add to an existing block is `@superseded:`, once.
+- **The new block inherits the old one's tags**, so it turns up in every view the original
+  did. A correction that fell out of its own topic would be a quiet loss.
+- **`@superseded:` is written into the file, not worked out on demand** — so if you open the
+  pile in xed a year from now with no tool running, the stale block *tells you itself* that
+  something replaced it, and names what.
+- **Pushing the same view twice is skipped, not doubled.** Scribe notices the block is
+  already superseded, tells you your view is stale, and names the block to edit instead:
+
+  ```
+  SKIPPED 1 block(s) already superseded — your view is stale, and pushing it would fork the chain:
+      #2ea7 was superseded by #b344. Regenerate the view and edit #b344 instead.
+  ```
+
+**Don't want that history in the pile?** Then don't use `push`. Open `pile.txt` in xed and
+fix the block in place — it is a plain text file and always was, and restic keeps *that*
+history instead. **Two doors, and you pick per edit:** history-in-the-pile through `push`,
+history-in-your-backups through your editor. Scribe binds *itself* to append-only; it does
+not bind you.
+
+**Reading a pile that has supersessions in it.** A view shows both blocks and says so in its
+own header, because hiding them by default would be exactly the silent exclusion this tool
+refuses:
+
+```bash
+scribe view topic:nas pile.txt
+#   # 1 block(s) here carry @superseded: — a later block has replaced them.
+#   # Shown, not hidden; use --current to drop them.
+
+scribe view topic:nas pile.txt --current       # just the live ones
+#   # --current: 1 superseded block(s) HIDDEN from this view. They are still in the pile.
+```
+
+Use `--current` when you want to *work*; leave it off when you want to see how a thought
+moved. Either way the pile keeps everything.
+
+*One rough edge, said plainly:* `toc` and `export` do **not** know about supersession and
+have no `--current`. So `scribe export topic:nas pile.txt --bare` hands the next mind **both**
+the old wording and the new. When you export a topic you have pushed to, check what came out
+before you paste it.
 
 **To hand a batch to an AI** (the "copy the staging tab into ChatGPT" move), export instead
 of view — `--bare` strips every header and back-link so there's nothing to scroll-and-delete
@@ -254,15 +351,19 @@ safe direction you already trust.
    ┌─ Job 1: still a xed tab. Compose long input here, safe from the browser. Unchanged. ─┐
 
    capture   :  (saved fragment | xsel -b)  →  scribe capture … --append pile.txt
-   explain   :  scribe stamp pile.txt               # once, for a pile made before v1.1.0
+   explain   :  scribe stamp pile.txt               # once, for a pile made before v1.1.0 —
+                                                    #   also gives an old pile its @genesis:
    look      :  scribe toc pile.txt                 # contents by subject (the default)
    look again:  scribe toc pile.txt --by path       # …the SAME pile, ordered by reaching
    what keys :  scribe keys pile.txt                # what your vocabulary has become
    gather    :  scribe view topic:X pile.txt > X.view 2>/dev/null ; xed X.view &
+   live only :  scribe view topic:X pile.txt --current   # v1.3.1 — hide superseded blocks
    work      :  edit bodies in xed, save
-   land      :  scribe push X.view pile.txt         # edits home by #id ; delete the view
+   land      :  scribe push X.view pile.txt         # v1.3.1 — APPENDS a superseding block,
+                                                    #   never overwrites ; delete the view
    hand off  :  scribe export topic:X pile.txt --bare > for-ai.txt ; xed for-ai.txt &
    who points at it: scribe backlinks '#c98b' pile.txt   # v1.1.2 — see below
+   two blocks, one name: scribe duplicates pile.txt      # v1.3.0 — see below
 ```
 
 `scribe toc pile.txt` any time prints the whole table of contents from your tags — the list
@@ -362,10 +463,59 @@ written back, and a shared value can be a real convergence or just a coincidence
 stays yours. `--by act` (or any key) narrows the scan to one key; `--no-cites` skips the
 citation half if you only want the tag-value scan.
 
+**`scribe duplicates` (v1.3.0) — "do two blocks answer to the same name?"** In a pile made by
+v1.3.0 or later this should always come back empty, because handles are checked as they are
+issued. It matters for the piles you already had: those were made by a scribe that could mint
+the same id twice, and this is how you find out whether yours did.
+
+```bash
+scribe duplicates pile.txt
+#   pile.txt — 42 block(s), 0 duplicated handle(s)
+#   no duplicated handles
+```
+
+On an older pile that *did* collide, it shows you both blocks with their identities, so you
+can see whether they are one saying recorded twice or two different sayings:
+
+```bash
+scribe duplicates old-pile.txt
+#   old-pile.txt — 2 block(s), 1 duplicated handle(s), NO @genesis: line (legacy pile)
+#     2 block(s) carry no @mint: — minted before the identity split. Named, not upgraded.
+#     #aaaa — 2 blocks
+#         2026-01-01T00:00  no @mint: (legacy)  'first saying'
+#         2026-01-02T00:00  no @mint: (legacy)  'second saying'
+#         ^ all legacy: whether these are one saying or two cannot be decided by the tool.
+#           Yours to rule.
+```
+
+**It never repairs anything, and that is deliberate** — re-minting a block would break every
+`@ref:` already pointing at it. It reports; the ruling is yours. While a handle is ambiguous,
+`push` and `tag` **refuse to write to it at all** and list the candidates, rather than picking
+one and getting it wrong silently. That refusal is the actual protection; `duplicates` is just
+how you go looking before you get refused.
+
+**Old piles, and what to do about them.** A pile started before 2026-08-01 has no `@genesis:`
+line and its blocks have no `@mint:`. Nothing is wrong with it — every handle that has worked
+since capture keeps working — and scribe will **not** upgrade it behind your back, because
+re-minting would break the relational tags pointing in. Verbs that meet one say so:
+
+```
+NOTE: pile.txt carries no @genesis: line (a pile born before 2026-08-01). Its mints fall
+back to the pile's PATH alone — still distinct from other piles, but carrying no birth
+moment. Run `scribe stamp` on a pile you have unstamped, or leave it.
+```
+
+`scribe stamp pile.txt` gives it a genesis from that moment on, so blocks captured *from now*
+are minted properly. Blocks already in it keep exactly the handles they have. Leaving it alone
+is also a fine answer.
+
 **Your pile explains itself to whoever opens it.** A pile created from v1.1.0 onward starts with
 a short comment header saying what the format is, which commands search it properly, and why a
 plain `grep` over it hands back fragments — a body line with no id or tags, or a header with no
-claim, never a whole record. That matters beyond your own use: if you ever point an AI assistant
+claim, never a whole record. From v1.3.0 it also explains the long hex at the end of each header
+(the mint) and carries the pile's own `@genesis:` line: this pile's birth identity, and the
+reason its blocks stay distinct from every other pile's without any central register anywhere.
+That matters beyond your own use: if you ever point an AI assistant
 at the drive where your piles live, it meets the instruction **in the file** rather than needing
 you to remember to explain it. For a pile you made before this, run `scribe stamp pile.txt` once.
 It is only ever written when a pile is *created* (or when you run `stamp` yourself), so if you
@@ -384,9 +534,17 @@ tool can check it.
 
 - **Always redirect a view to a file with `2>/dev/null`.** Without it, Scribe's status line
   lands in the file too and clutters what you open in xed. With it, the file is clean.
-- **Edit views, not the pile.** The pile is safe to read and safe to `push` into; but if you
-  hand-edit a block's `@@ #id …` header in the pile you can orphan it. Change tags with
-  `scribe tag <id> pile.txt --tag act:… ` / `--remove topic:…`, not by retyping the header.
+- **Edit views, not the pile — with one deliberate exception.** The pile is safe to read and
+  safe to `push` into; but if you hand-edit a block's `@@ #id …` header you can orphan it.
+  Change tags with `scribe tag <id> pile.txt --tag act:… ` / `--remove topic:…`, not by
+  retyping the header. **Three things on that line are never yours to retype:** the `#id`, the
+  timestamp, and `@mint:`. The exception is the one named above: editing a **body** by hand,
+  when you deliberately want the correction without a supersession trail in the pile.
+- **A push adds a block; it does not change one.** If your pile got longer after a push,
+  nothing went wrong — that is the design. `scribe view … --current` gives you the tidy read;
+  the pile itself keeps the whole movement.
+- **An export can contain a stale body.** `export` and `toc` don't filter superseded blocks,
+  so a topic you have pushed to exports both wordings. Eyeball `for-ai.txt` before pasting.
 - **A non-zero exit is not always a failure.** Exit `1` means scribe refused to do what you
   asked. Exit `2` means it *did* the job and has something to disclose — a malformed header
   line, most often. Only `1` means nothing happened.

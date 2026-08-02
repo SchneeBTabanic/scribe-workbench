@@ -1,6 +1,87 @@
 # PROVENANCE — Scribe's Workbench
 
-## v1.2.0 — "the other half of a trigger, a checksum for a view, a first reach at §3.15" (2026-07-31) — CURRENT
+## v1.3.1 — "push appends and supersedes; it never overwrites" (2026-08-02) — CURRENT
+
+A named new version, not a silent edit (§5.8). **Behaviour change to `push`, ruled by the
+sovereign 2026-08-02** and recorded at `RIPE-LEDGER.txt#3f02`.
+
+`push` used to assign `pb.body = vb.body`, rewriting the pile in place — which made scribe
+*less append-only than it claimed*: a body could change underneath a `@ref:` written to the
+old wording. It now **appends a superseding block**. The old block keeps its body and its
+`@mint:` and gains exactly **one** tag, `@superseded:#new`; the new block carries
+`@replaces:#old`, inherits the old block's vocabulary, and mints its own identity.
+
+**Bodies and identities are inviolable — that is the whole rule**, asserted directly by
+`test_INVIOLABLE_bodies_and_identities`. The one permitted write onto an existing block is a
+status tag, which is the same act `scribe tag` already performs as a sanctioned verb, and it
+is placed BEFORE `@mint:` so a tool-off reader actually meets it. Deriving the warning via
+`backlinks` instead would have been purer and would have cost the tool-off-readable
+invariant; between two stated invariants, **legibility was ruled to win** — the file itself
+keeps telling the truth.
+
+**The sovereignty ground, which is why this is not a restriction:** *"I can always directly
+edit a block in a pile if I don't want the history that comes with push — so my sovereignty
+is enhanced by the choice."* Two doorways, chosen per act: history-in-the-pile via `push`,
+history-in-restic via hand-edit. **The tool binds itself; it does not bind the human**
+(§3.1). gForth is the model — you may always edit the source and recompile, but the
+dictionary never rewrites a definition underneath a reference already bound to it
+(`ebook_gforth-manual.txt:2721`).
+
+Also: `view --current` opts into hiding superseded blocks, and **the hiding is declared in
+the view's own header**. They are never hidden by default and never removed from the pile —
+a view that silently dropped them would be the undisclosed exclusion §3.8 names. Whether
+`--current` should become the default is deliberately NOT decided; it belongs to the same
+gate.
+
+| File | Role | SHA-256 |
+|---|---|---|
+| `scribe.py` | frozen core | `d3604fa5282a8fbe52631c1548e69bb14bdd09307b1bf57c06ce8d53f22a52d6` |
+| `test_scribe.py` | core tests (119) | `8419c95e2c2072296f647e5a848d9b6ce48581ca36193709138101feb91facf1` |
+
+**Test attestation at v1.3.1:** 119 tests pass. `TestPushHome` was rewritten against the
+ruled behaviour (its old tests asserted the overwrite and are gone, not disabled), plus the
+inviolability assertion, the stale-view fork refusal, the status-tag-precedes-mint check, and
+two view-disclosure tests.
+
+---
+
+## v1.3.0 — "separate the mint from the handle" (2026-08-01)
+
+A named new version, not a silent edit (§5.8). The ONE breaking change in scribe's history,
+and it is named as such: `gen_id` is gone, replaced by `gen_mint` + `gen_handle`, and every
+newly captured block carries a `@mint:` tag. Existing piles are untouched and keep working —
+nothing is ever re-minted, because re-minting would change ids that relational tags already
+point at.
+
+**What it fixes.** Block ids collided — within a single pile as well as across piles — and
+`push` silently wrote an edit to the wrong block when they did. Root cause was a category
+error, not a hash weakness: a block is a NOMINAL object (an utterance, declared at a moment)
+and scribe identified it STRUCTURALLY (a hash of its content), so two identical sayings were
+asserted to be one saying. No hash width could have fixed that.
+
+| File | Role | SHA-256 |
+|---|---|---|
+| `scribe.py` | frozen core | `37bbeb9219a706cc1a334b9615152037311f42b74dbe8a70c292d504dc001071` |
+| `test_scribe.py` | core tests (112) | `2f650ff083f7773cf87b85bd14442d0d6f0ce2ba7fc9dd01196210a9a232f867` |
+
+**Test attestation at v1.3.0:** 112 tests pass (82 carried forward unchanged + 30 new:
+9 for the mint/handle split, 7 for ambiguity refusal, 5 for nominal capture, 2 for the
+duplicates audit, and 7 for the proposed §3.16 guard-set — kind-declaration lint,
+signature-test-per-kind, whole-identity check, unitemised-placeholder guard. All four
+guards were mutation-verified: each was made to fail by reintroducing the defect it
+exists to catch.). Verified on the sovereign's real piles: `RIPE-LEDGER.txt` (43 blocks) and
+`STANDING-PROCEDURES.txt` (1 block) audit clean — 0 duplicate handles, 44 blocks correctly
+named legacy.
+
+**Prior art, cited because the ruling is not scribe's invention:** gForth
+(`ebook_gforth-manual.txt:2399`, `:2710`, `:2721`), Unison (`docs/data-types.markdown:7-12`,
+`codebase-editor-design.markdown:23`, `:82`), restic (`data-safety/DESIGN.md:99`, `:110`,
+`:129`), Sovereign Pool (`tagio.h:44`), Knuth (`Literate-Programming-Knuth.txt:827`), Debian
+ledger row 29 (`LEDGER-debian-pillars.md:47`).
+
+---
+
+## v1.2.0 — "the other half of a trigger, a checksum for a view, a first reach at §3.15" (2026-07-31)
 
 A named new version, not a silent edit (§5.8). Additive only; v1.1.2 below is unchanged.
 

@@ -1,5 +1,15 @@
 # The scribe shell — an optional full-screen front-end (Textual)
 
+> **STATUS: NOT READY. This is unfinished work, and it needs more before anyone should rely
+> on it for daily use.** Everything scribe does, it does from the command line beside your own
+> editor — that is the supported path, and the guide (`GUIDE-scribe-with-xed.md`) teaches it.
+> This shell is an experiment sitting on top of that, and it lags the tool: it has fallen
+> behind scribe's verb list at least three times (see `duplicates` below), and its own tests
+> check that the verbs it forwards *work*, not that it forwards *all* of them. Treat it as a
+> sketch to be finished, not a component to depend on. Nothing in it can hurt a pile — it
+> shells out to scribe and only `push` writes — but it may quietly not offer you something
+> scribe has.
+
 Commands in, derived views as throwaway tabs, edits home by `#id`.
 
 It is a **view, never a doorway** (Charter §4.3, §4.6): the pile is a file you edit in your
@@ -47,11 +57,17 @@ stdout and `scribe push -` reads the edited view from **stdin**, so the whole ro
 derive, edit, push — never materialises a file. The canonical pile is the only thing on disk,
 and only `push` touches it.
 
-**Frozen scribe is never imported, only invoked.** `scribe.py` is at v1.2.0 (additive over
+**Frozen scribe is never imported, only invoked.** `scribe.py` is at v1.3.1 (additive over
 v1.0-frozen; see `PROVENANCE.md`). This shell calls it as a subprocess, so it *cannot* change
 scribe's behaviour — the freeze holds by construction rather than by promise. `viewer/` is an
 unfrozen sibling of a frozen core; the freeze covers `scribe.py` and its tests, not this
 directory.
+
+**`push` from a tab appends; it does not overwrite** (scribe v1.3.1). The shell is a thin
+caller, so it inherits this whole: an edited tab pushed home lands as a **new** block carrying
+`@replaces:#old`, and the original gains `@superseded:#new` and keeps its body. A tab you
+derived before a push is therefore stale after one — re-derive it rather than pushing twice;
+scribe will skip the second push and say so, rather than forking the chain.
 
 ## Provenance — this is a descendant, not a mirror
 
@@ -77,7 +93,16 @@ python3 viewer/test_scribe_viewer_core.py     # 8, headless: no TTY, no textual,
 The pilot proves the parts that matter: a malformed selector is **named**, never opened as an
 empty tab; a pristine buffer **refuses** to push rather than rewriting the pile for nothing;
 an edited buffer lands by `#id` while blocks outside the view stay untouched; and `/help`
-carries all nine of scribe's verbs.
+carries the verbs listed in `_SCRIBE_VERBS`.
+
+**Known gap, stated rather than left to be discovered.** That assertion checks the verbs in its
+tuple are **present**, not that the tuple is **complete** — so a verb added to scribe and not to
+the tuple passes silently. It has happened three times (`backlinks`; then `keys` and `stamp`;
+and now **`duplicates`**, added in scribe v1.3.0, which is missing from both `_FORWARDED_VERBS`
+and the test tuple). `/help` still shows it, because `/help` is derived from `scribe --help` and
+cannot be wrong — but typing `duplicates` in the shell will not forward it. Run it from the
+terminal. The real repair is a completeness assertion against `scribe --help`, which is part of
+what "not ready" above means.
 
 **Not covered by tests, and yours to judge:** layout, blocking and key capture on a real
 terminal. The agent's viewer proved why — a modal that blocked the whole screen and an input

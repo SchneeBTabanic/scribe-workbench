@@ -43,6 +43,18 @@ every block sharing that exact value. So keys with a **short fixed list of value
 views, and keys where every block says something different are simply read where they sit. Both are
 fine — just know which you're writing.
 
+**5. Three keys are the tool's, not yours (new — v1.3.0 and v1.3.1).** Everything else on this
+sheet is vocabulary you write. These three are written by scribe:
+
+| key | who writes it | what to do about it |
+|---|---|---|
+| `@mint:` | scribe, once, at capture | **Never touch it.** `scribe tag --tag mint:…` is refused; `scribe keys` leaves it out and says so. It is the block's identity, not a description of it. |
+| `@superseded:#new` | `scribe push`, onto the **old** block | Read it: it means a later block replaced this one. You may still write it by hand for a supersession `push` had no part in. |
+| `@replaces:#old` | `scribe push`, onto the **new** block | Same — read it, and write it by hand when you are recording the relation yourself. |
+
+The point of the rule is the first row. The other two are still yours to write; they simply are
+no longer *only* yours. Full detail in the two entries below.
+
 ---
 
 ## Every key does one of two jobs — and this is what decides whether it can ever make a VIEW
@@ -210,6 +222,36 @@ a person checking now and then?) so nobody mistakes light watching for a guarant
 
 ---
 
+## What a `#id` in a tag value actually points at (v1.3.0 — read this before the pointer keys)
+
+Every key in the next section carries another block's id. Since v1.3.0 a block has **two**
+names, and only one of them belongs in a tag value:
+
+| on the header | what it is | do you type it? |
+|---|---|---|
+| `#c98b` at the front | the **handle** — short, and unique *within its pile* | **yes** — this is what `@ref:` and every key below point at |
+| `@mint:c98b4f…` at the end | the **identity** — the whole 64-hex fingerprint | **no** — nothing points at it, and `scribe tag` refuses to write it |
+
+Why the split: a name has to be short enough to type, which makes it short enough to collide;
+an identity has to be long enough that it never does. One token was doing both jobs, and two
+blocks captured in the same minute saying the same thing got the same id — after which a push
+landed an edit on the wrong block, silently. The fix was two fields, not a longer id.
+
+**What this changes for tagging, in practice:**
+
+- **Write the handle, with or without the `#`.** `@ref:#c98b` is the convention; `@ref:c98b`
+  parses identically. Cross-pile, use `@ref:other.txt#c98b` — `scribe backlinks` reads it.
+- **A handle may be longer than four characters.** If a short one was taken, capture issued a
+  longer one and said so. Copy what is actually on the block; don't assume four.
+- **Handles are never renamed** — they only ever grow at issue time. A pointer you wrote last
+  year still lands.
+- **A truncated pointer is resolved, not guessed.** `@ref:c9` will resolve if `c9` names
+  exactly one block; if it names two, the verb refuses and lists them. Prefer the full handle.
+- **Piles started before 2026-08-01** have handles but no mints. They keep working and are
+  never upgraded — `scribe duplicates pile.txt` tells you whether any of them collide, and if
+  two legacy blocks share a name, whether they are one saying or two is **yours** to rule; the
+  tool will not decide it and will not repair it.
+
 ## Keys that point at another block — witness keys, read in place
 
 All take a block id: `@overrules:#c98b`.
@@ -234,11 +276,26 @@ the new one. The person who needs telling is the one who wandered into the outda
 person reading the current version already knows. Never delete the old block — a stale note that
 says it's stale beats no note at all.
 
+> **This rule is now enacted in the tool, and it is the reason `push` works the way it does
+> (v1.3.1).** `scribe push` no longer overwrites a block; it appends your edited version as a new
+> block and writes `@superseded:#new` onto the old one — **the only tag it may ever add to an
+> existing block, at most one, and it touches neither the body nor the identity.** The direction
+> is this sheet's, quoted in `scribe.py` itself: the mark goes where the person who needs it will
+> be standing. It is *written into the file* rather than derived by `backlinks`, deliberately —
+> derived would have been purer, and would have meant a reader with the tool switched off met no
+> mark at all on the stale block. Also new: scribe places it **before** `@mint:` in the tag run,
+> because a warning parked behind sixty-four characters of hex is a warning nobody reads.
+
 **`@yields:#id`** — if this block and that one ever contradict each other, that one wins. Decided
 in advance, while you're calm, rather than during the argument.
 
 **`@replaces:#id`** — a rewrite of that block, kept as a separate change rather than an edit over
-the top.
+the top. **`scribe push` writes this half too** (v1.3.1), onto the block it appends — so the pair
+is complete in the file from both ends: the old block says what replaced it, the new one says what
+it replaced. The new block also **inherits the old one's tags**, so the correction shows up in
+every view the original did; a supersession that dropped out of its own topic would be a silent
+loss. Two blocks in a chain both answer `scribe view topic:X`, and the view says so in its header —
+`scribe view topic:X pile.txt --current` hides the superseded ones and declares that it did.
 
 ---
 
@@ -357,13 +414,16 @@ That's a live, view-able, honest pile on day one. Everything else on this sheet 
 — you overruled something, you retired something, you rejected a path — so reach for it when the
 situation actually turns up. Reaching for all of them at once is how a method dies in week one.
 
-A worked block, using nothing exotic:
+A worked block, using nothing exotic (one line, however long — a header wrapped onto a second
+line is not a header, and its remainder becomes body text):
 
 ```
-@@ #c98b 2026-07-07T19:48 @act:protect-against-bit-rot @path:toward-integrity-over-convenience
-   @aspect:manifested @topic:nas @source:gemini @origin:ai @attests:self
+@@ #c98b 2026-07-07T19:48:03.112904 @act:protect-against-bit-rot @path:toward-integrity-over-convenience @aspect:manifested @topic:nas @source:gemini @origin:ai @attests:self @mint:c98b4f1a…64 hex…
 ZFS vs ext4: use ZFS on the NAS for checksums and snapshots.
 ```
+
+Everything up to `@attests:self` is yours. The trailing `@mint:` is scribe's, written once at
+capture; it sits last so your eye meets the vocabulary first and the hash runs off the end.
 
 ---
 
@@ -384,11 +444,13 @@ scribe tag c98b pile.txt --tag aspect:manifested --remove aspect:manifesting
 ```
 
 `--topic` and `--source` still work; `--tag` is simply the door to everything else. `--state` also
-still works but announces that it writes a **retired** key — write `--tag aspect:…` instead.
+still works but announces that it writes a **retired** key — write `--tag aspect:…` instead. One
+key the door does not open: `--tag mint:…` is **refused** on both verbs, because that is the
+block's identity and not vocabulary.
 
 *(This replaces the old hand-typing workaround. Hand-editing the tag run in xed is still perfectly
-safe if you prefer it — the `#id` and the timestamp are the two things never to touch — but it is no
-longer the only route, and it was the route that tripped the space bug.)*
+safe if you prefer it — the `#id`, the timestamp and `@mint:` are the three things never to touch —
+but it is no longer the only route, and it was the route that tripped the space bug.)*
 
 **Then check, in this order:**
 
@@ -402,6 +464,12 @@ longer the only route, and it was the route that tripped the space bug.)*
 4. `scribe toc pile.txt --by path` — read your own pile along the axis of reaching rather than
    subject. This is the honest test of whether your paths are alive: if two blocks reach the same
    way, they gather; if every path is unique, they don't, and that tells you something too.
+5. `scribe duplicates pile.txt` — **once per pile, and then only when you inherit an old one.**
+   On a pile made by v1.3.0 or later this always comes back empty, because handles are checked as
+   they are issued. On an older pile it is how you find out whether two blocks answer to the same
+   name — which matters most for the pointer keys above, since a `@ref:` into an ambiguous handle
+   is a pointer nobody can follow. It reports and never repairs: re-minting would break every tag
+   already pointing in.
 
 ---
 

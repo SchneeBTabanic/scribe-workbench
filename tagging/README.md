@@ -5,6 +5,25 @@ scribe itself has **no registry and no opinion**: `TAG_RE` accepts any `@key:val
 person keeping the pile, not to the tool). It also means the discipline has to live somewhere,
 and it lives here.
 
+**Three exceptions, added 2026-08-01/02 and small enough to state here in full.** scribe now
+writes three tags of its own, and one of them it will not let you write:
+
+- **`@mint:`** — a block's identity, minted once at capture and never recomputed. `scribe tag`
+  **refuses** it, `scribe keys` excludes it with a notice, and it sits last on the header so
+  your vocabulary stays on the readable side of the hash. It is not a description of a block;
+  it is *which block this is*. The short `#id` at the front is a separate thing — the **handle**,
+  a name — and that is what every `@ref:`-style tag points at. This is not a registry: nothing
+  central knows about any block; each pile carries its own `@genesis:` in its stamp and the
+  distinctness falls out of that.
+- **`@superseded:`** and **`@replaces:`** — still ordinary vocabulary you may write by hand, but
+  `scribe push` now writes them too, as the two halves of one supersession, because `push`
+  appends a corrected block rather than overwriting the original. The *direction* it writes them
+  in is this sheet's own ruling, quoted in the source: the mark goes on the block a reader will
+  wander into by mistake.
+
+Both are covered properly in `TAGS-bench-sheet.md` — mechanical rule 5, the `#id` section before
+the pointer keys, and the two key entries themselves.
+
 **Two documents, and they are different jobs:**
 
 - **`TAGS-bench-sheet.md` — the DOING sheet.** Keep this open while you work. Plain language,
