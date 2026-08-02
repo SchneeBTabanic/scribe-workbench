@@ -229,12 +229,25 @@ class TestIdStability(unittest.TestCase):
         handles — and exists so the next change to it is a DECISION, not a drift."""
         self.assertEqual(scribe.HANDLE_MIN, 4)
         spec = pathlib.Path(__file__).with_name("PHASE-0-RECON-AND-PROPOSAL.md")
-        if spec.exists():
-            examples = re.findall(r"^@@ #([0-9a-f]+) ", spec.read_text(), re.M)
-            self.assertTrue(examples, "spec worked examples not found — guard is blind")
-            self.assertTrue(
-                all(len(e) >= scribe.HANDLE_MIN for e in examples),
-                f"spec examples {examples} are shorter than HANDLE_MIN")
+        if not spec.exists():
+            # §3.8, applied to this suite itself: a skipped check and a passing check must
+            # never look the same. `if spec.exists():` made this one PASS SILENTLY wherever
+            # the spec is absent — which is every published clone, since the spec is part of
+            # the withheld development history. The suite reported OK and this guard had not
+            # run. It is now a COUNTED, NAMED skip: the runner prints `OK (skipped=N)` and
+            # says which check did not run and why. Same shape as the tag-validator's third
+            # verdict tier — a witness formally separate from a fault, and countable.
+            raise unittest.SkipTest(
+                f"CHECK NOT RUN — {spec.name} is not present in this tree (it is part of "
+                f"the withheld development history, so this is EXPECTED in a published "
+                f"clone and is not a failure). The spec-vs-implementation comparison this "
+                f"test exists to perform did NOT happen here; run it in the development "
+                f"repository, where the spec is present.")
+        examples = re.findall(r"^@@ #([0-9a-f]+) ", spec.read_text(), re.M)
+        self.assertTrue(examples, "spec worked examples not found — guard is blind")
+        self.assertTrue(
+            all(len(e) >= scribe.HANDLE_MIN for e in examples),
+            f"spec examples {examples} are shorter than HANDLE_MIN")
 
     def test_no_dead_guard_parameter_remains(self):
         """The docstring was the most dangerous artifact: the old gen_id claimed to
@@ -807,6 +820,37 @@ class TestTagging(unittest.TestCase):
         scribe.add_tags(blocks, "n1", add=[("topic", "nas")])   # already present
         n1 = [b for b in blocks if b.id == "n1"][0]
         self.assertEqual(n1.topics().count("nas"), 1)
+
+    def test_added_tags_land_BEFORE_the_mint_not_after_it(self):
+        """@mint: is placed last at capture so the human's eye meets the vocabulary first
+        and the 64 hex trail off the end of the line (§4.6, argued at make_block). `push`
+        already honoured that for its status tag; `add_tags` did not, so every tag a human
+        added by hand landed PAST the wall of hex — quietly undoing the ruling for exactly
+        the tags most meant to be read. FOUND LIVE, not by reading: tagging a real block in
+        STANDING-PROCEDURES.txt put @act: — the most load-bearing key on the bench sheet —
+        after the mint."""
+        pile = ("@@ #z1 2026-08-02T10:00:00.000001 @topic:x "
+                "@mint:" + "d" * 64 + "\nbody\n")
+        blocks = scribe.parse_pile(pile)
+        ok, b = scribe.add_tags(blocks, "z1", add=[("act", "keeps-the-thread-alive"),
+                                                   ("path", "toward-being-read")])
+        self.assertTrue(ok)
+        keys = [k for k, _ in b.tags]
+        self.assertEqual(keys[-1], scribe.MINT_KEY,
+                         f"@mint: must stay last in the tag run; got {keys}")
+        self.assertEqual(keys, ["topic", "act", "path", scribe.MINT_KEY],
+                         "added tags must keep their order, before the mint")
+        # And the header the human actually reads must show it that way.
+        self.assertNotIn("d" * 64 + " @act:", scribe.serialize_block(b))
+
+    def test_a_legacy_block_with_no_mint_still_appends_normally(self):
+        """The insertion point is 'before @mint:, or at the end if there is none'. A block
+        captured before the identity split has no @mint:, and must not be disturbed by the
+        rule that exists for blocks that do."""
+        blocks = scribe.parse_pile("@@ #z2 2026-01-01T00:00 @topic:x\nbody\n")
+        ok, b = scribe.add_tags(blocks, "z2", add=[("act", "still-works")])
+        self.assertTrue(ok)
+        self.assertEqual([k for k, _ in b.tags], ["topic", "act"])
 
 
 class TestAtomicWrite(unittest.TestCase):
@@ -1466,9 +1510,18 @@ class TestIdentityKindGuards(unittest.TestCase):
         """A lint that can never fire is worse than none — it reads as coverage. Prove the
         pattern actually catches the historical specimen it was built from."""
         spec = pathlib.Path(scribe.__file__).parent / "PHASE-0-RECON-AND-PROPOSAL.md"
-        if spec.exists():
-            self.assertTrue(self.PLACEHOLDER_RE.search(spec.read_text()),
-                            "the guard no longer detects the case that earned it")
+        if not spec.exists():
+            # See test_handle_floor_matches_the_ruled_spec for the full reasoning. A lint
+            # that can never fire reads as coverage; a test proving it can fire, which
+            # itself silently no-ops, is the same defect one layer up.
+            raise unittest.SkipTest(
+                f"CHECK NOT RUN — {spec.name} is not present in this tree (withheld "
+                f"development history; EXPECTED in a published clone, not a failure). The "
+                f"guard-is-not-blind proof did NOT run: nothing here has demonstrated that "
+                f"the placeholder pattern still catches the historical specimen it was "
+                f"built from. Run it in the development repository.")
+        self.assertTrue(self.PLACEHOLDER_RE.search(spec.read_text()),
+                        "the guard no longer detects the case that earned it")
 
 
 def _run_cmd(argv):

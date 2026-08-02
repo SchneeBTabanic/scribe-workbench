@@ -57,7 +57,7 @@ stdout and `scribe push -` reads the edited view from **stdin**, so the whole ro
 derive, edit, push — never materialises a file. The canonical pile is the only thing on disk,
 and only `push` touches it.
 
-**Frozen scribe is never imported, only invoked.** `scribe.py` is at v1.3.1 (additive over
+**Frozen scribe is never imported, only invoked.** `scribe.py` is at v1.3.2 (additive over
 v1.0-frozen; see `PROVENANCE.md`). This shell calls it as a subprocess, so it *cannot* change
 scribe's behaviour — the freeze holds by construction rather than by promise. `viewer/` is an
 unfrozen sibling of a frozen core; the freeze covers `scribe.py` and its tests, not this

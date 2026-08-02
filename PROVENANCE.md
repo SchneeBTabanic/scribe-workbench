@@ -1,6 +1,48 @@
 # PROVENANCE — Scribe's Workbench
 
-## v1.3.1 — "push appends and supersedes; it never overwrites" (2026-08-02) — CURRENT
+## v1.3.2 — "a tag a human adds must land where a human reads" (2026-08-02) — CURRENT
+
+A named new version, not a silent edit (§5.8). Two defects, **both found by using the tool
+rather than by reading it**, and both of the same shape: a rule the project had already
+stated, enacted in one place and quietly not in another.
+
+**1. `add_tags` appended past the mint.** `@mint:` is placed last at capture, deliberately
+and against a real objection (§4.6: 64 hex per header in a file whose whole virtue is being
+readable in an editor) — the trade being that the human's eye meets the vocabulary first and
+the hash trails off the end of the line. v1.3.1 honoured that for `push`'s status tag, via
+`_insert_before_mint`. `add_tags` still used a plain `.append`, so **every tag a human added
+by hand landed BEYOND the wall of hex** — precisely the tags most meant to be read. Found
+live while tagging a real block in `STANDING-PROCEDURES.txt`: `@act:`, the most load-bearing
+key on the bench sheet, ended up after the hash. Both writers now go through the one
+placement rule. A legacy block carrying no `@mint:` still simply appends.
+
+**2. Two guards passed without running.** `test_handle_floor_matches_the_ruled_spec` and
+`test_guard4_the_guard_is_not_blind` both read `PHASE-0-RECON-AND-PROPOSAL.md` behind an
+`if spec.exists():`. That file is part of the withheld development history, so **in every
+published clone the suite reported a clean `OK` while two of its checks had silently not
+run** — a skipped check and a passing check looking identical, which is the one thing §3.8
+forbids, in the artifact that ships. They now raise `unittest.SkipTest` with the reason
+named: the runner prints `OK (skipped=2)` and says which comparison did not happen and
+where to run it. Debian's `classification` tier again — a witness formally separate from a
+fault, and countable. Verified by running the suite against a tree containing only the
+published files.
+
+Nothing else changed: no format change, no new verb, no flag. Existing piles are untouched,
+and a pile written by any earlier version parses identically.
+
+| File | Role | SHA-256 |
+|---|---|---|
+| `scribe.py` | frozen core | `fd20aaa10328d999e10a13b2402c8a960d884df1248fe9322ed6a9f953139e6a` |
+| `test_scribe.py` | core tests (121) | `9ba856690dc1ec5737a4cd8e42b680a5c1e77dc6e45e94fb79c7d8d71835c517` |
+
+**Test attestation at v1.3.2:** 121 tests pass (119 carried forward + 2 new: added tags land
+before the mint and keep their order; a legacy block with no mint still appends normally).
+The skip fix is mutation-verified — with the spec file absent the suite reports
+`OK (skipped=2)` where it previously reported a bare `OK`.
+
+---
+
+## v1.3.1 — "push appends and supersedes; it never overwrites" (2026-08-02)
 
 A named new version, not a silent edit (§5.8). **Behaviour change to `push`, ruled by the
 sovereign 2026-08-02** and recorded at `RIPE-LEDGER.txt#3f02`.

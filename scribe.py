@@ -46,7 +46,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 
-VERSION = "1.3.1"
+VERSION = "1.3.2"
 
 # The one external process the HTML path shells to. Recorded for provenance (§4.4); the
 # tool discloses the running pandoc via `scribe doctor` and hard-fails if it is absent.
@@ -1483,7 +1483,14 @@ def add_tags(blocks, block_id, add=None, remove=None):
     b.tags = [(k, v) for (k, v) in b.tags if f"{k}:{v}" not in remove]
     for (k, v) in add:
         if (k, v) not in b.tags:
-            b.tags.append((k, v))
+            # BEFORE @mint:, for the same reason push's status tag goes there — @mint: is
+            # placed last at capture so the human's eye meets the vocabulary first and the
+            # 64 hex trail off the end of the line (§4.6, argued at `make_block`). A plain
+            # `.append` put every later-added tag PAST that wall, which quietly undid the
+            # ruling for exactly the tags a human adds by hand and therefore most wants to
+            # read. Found live 2026-08-02 tagging a real block: @act: — the most load-
+            # bearing key on the bench sheet — landed after the hash.
+            b.tags = _insert_before_mint(b.tags, (k, v))
     return True, b
 
 

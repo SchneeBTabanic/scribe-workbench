@@ -218,7 +218,7 @@ core never depends on it. See `edge/README.md`.
 
 ## Freeze
 
-v1.3.1 current (additive over v1.0-frozen; frozen-ness was ruled to never be a reason
+v1.3.2 current (additive over v1.0-frozen; frozen-ness was ruled to never be a reason
 not to correct the tool — see `PROVENANCE.md`'s v1.1.0 entry). Stdlib-only,
 offline-rebuildable. Verify with `scribe doctor`. License **AGPL-3.0-or-later**.
 
