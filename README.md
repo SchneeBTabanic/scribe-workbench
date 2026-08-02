@@ -33,7 +33,7 @@ back in the pile by block id.
 ## The pile format
 
 ```
-@@ #<handle> <ISO-timestamp> @topic:nas @topic:zfs @source:gemini @mint:<64-hex>
+@@ #<handle> <ISO-timestamp> @act:protect-against-bit-rot @path:toward-integrity-over-convenience @topic:nas @source:gemini @mint:<64-hex>
 <the canonical block body, verbatim, any number of lines,
  until the next @@ line or end of file>
 ```
@@ -41,6 +41,51 @@ back in the pile by block id.
 Line-order is honest to **one** axis only — arrival time. Everything else (topic,
 salience, the table of contents) is derived on demand. A block can carry many tags and so
 appear in many views **without being moved or duplicated**.
+
+**The tags in that example are not decoration, and the order they are read in is the point.**
+scribe enforces no vocabulary — it stores any `@key:value` — but the discipline the vocabulary
+is written in has one rule above the rest: **a tag should carry a verb and a toward.**
+
+| | | |
+|---|---|---|
+| `@act:` | what the block **does** — an open verb phrase | carries the meaning |
+| `@path:` | what it **reaches toward or away from** | carries the meaning |
+| `@topic:` | the label on the drawer — helps you *find* it, does not say what it *means* | optional since v1.1.0 |
+| `@source:` | which mind said it | **sealed into the identity — see below** |
+
+An earlier version of this example showed `@topic:` and `@source:` alone. That is the exact
+shape the bench sheet calls a **dead tag** — *a noun in a drawer* — so the canonical example
+was quietly teaching against the project's own rule. `@topic:` is **not** retired and is
+legitimate as an index entry (Knuth's WEB index carries concepts, not just identifiers); it
+simply must not stand in for a block's meaning. The full vocabulary is in
+[`tagging/TAGS-bench-sheet.md`](tagging/TAGS-bench-sheet.md).
+
+### `@source:` is sealed into the mint — and it is the only tag that is
+
+The mint is taken over `genesis + ordinal + ts + source + body`, so **`@source:` alone among
+tags is frozen into a block's identity.** Every other tag — `@topic:`, `@act:`, `@path:`, the
+whole vocabulary — is freely revisable and does not affect verification. **The tag layer is
+therefore only partly revisable**, which is a real property of the format and is stated here
+rather than left to be discovered.
+
+**Why it is there, honestly.** Not as entropy. It was inherited from the old `gen_id`, which
+no ruling ever examined, and it is measurably the *lowest*-entropy field in a block —
+near-constant across a pile. The mint's actual guarantee comes from `genesis + ordinal`, which
+cannot collide. But it turns out to be doing a different job, and doing it well: it **seals the
+attribution.** A saying cannot be silently re-attributed — you cannot quietly relabel handed-in
+material as your own, or your own as an AI's, without `scribe verify` reporting the block as
+edited in place. That is the axis this project cares about most.
+
+**Consequence, declared:** correcting a `@source:` value is a visible act. It will report
+`edited in place since capture`, and that is right — re-attributing a saying should not be
+silent. If the value was simply wrong, correct it and let the record show that you did.
+
+*And the obvious objection, which sharpens rather than weakens it:* as a keeper's practice
+matures, `@source:` may converge on a single value and lose all discriminating power. But
+discriminating between blocks was never its job here. **A uniform value is not an empty one** —
+*"in this period, everything was self-sourced"* is a true historical claim, and the more the
+boundary between one's own thinking and a machine's dissolves in practice, the more worth
+freezing the claim that was made at the time.
 
 ### Handle and mint — two jobs, two fields (v1.3.0)
 
@@ -223,7 +268,7 @@ core never depends on it. See `edge/README.md`.
 
 ## Freeze
 
-v1.3.3 current (additive over v1.0-frozen; frozen-ness was ruled to never be a reason
+v1.3.4 current (additive over v1.0-frozen; frozen-ness was ruled to never be a reason
 not to correct the tool — see `PROVENANCE.md`'s v1.1.0 entry). Stdlib-only,
 offline-rebuildable. Verify with `scribe doctor`. License **AGPL-3.0-or-later**.
 

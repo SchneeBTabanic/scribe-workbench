@@ -1,5 +1,63 @@
 # PROVENANCE — Scribe's Workbench
 
+## v1.3.4 — "@source: is an attribution seal, not entropy — and it is the only sealed tag" (2026-08-02) — CURRENT
+
+A named new version, not a silent edit (§5.8). **No behaviour change**: no format change, no
+new verb, no flag, and every existing mint still verifies. What changed is a **justification
+that was false**, a **property that was true but undeclared**, and a **guard** for both. It is
+versioned rather than folded into v1.3.3 because that version is already published under its
+own pinned SHA, and amending a published record in place is what §5.8 exists to prevent.
+
+**The docstring told a falsehood.** `gen_mint` said `source` was there as *"extra entropy"*.
+Measurably wrong: `@source:` is the *lowest*-entropy field in a block, near-constant across a
+pile. The mint's real guarantee comes from `genesis + ordinal`, which cannot collide. `source`
+was never ruled on at any gate — it was inherited from `gen_id(ts, body, source)` and carried
+forward under a new name, **the same pattern as `#<id>` shipping unruled**, which is §3.16's own
+worked example. The identity work fixed one unexamined default and passed this one through.
+
+*(This file names an identity-shaped placeholder above, so it owes a kind declaration and here
+it is: scribe issues **`@identity:nominal`** — a block is an utterance, and two identical
+declarations are two things. Caught while writing this entry by the §3.16 guard-set's own
+guard 4, on this very document. The guard was built to catch a spec introducing an unruled
+placeholder; it caught the provenance record that cites one, which is the guard working, and
+the honest response is to declare rather than to add an exemption.)*
+
+**Re-justified rather than removed, because it turned out to be doing a different job well.**
+Including `source` **seals the attribution**: a block's claim about which mind said it is frozen
+into its identity at declaration, so a saying **cannot be silently re-attributed** — handed-in
+material cannot be quietly relabelled as one's own, nor one's own as an AI's, without `verify`
+reporting the block as edited in place. It was put there as entropy, fails at that, and succeeds
+as a seal. Removing it now would invalidate every existing mint for a field doing real work.
+
+**The objection that sharpens it:** as a keeper's practice matures, `@source:` may converge on
+one value and lose all discriminating power — but discriminating between blocks was never its
+job. **A uniform value is not an empty one:** *"in this period everything was self-sourced"* is a
+true historical claim, and the more the human/machine boundary dissolves in practice, the more
+worth freezing the claim made at the time.
+
+**THE DECLARED SURFACE, which is the substantive change (§3.8).** `@source:` is **the only tag
+inside the mint.** Every other tag — `@topic:`, `@act:`, `@path:`, `@aspect:`, the whole
+vocabulary — is freely revisable and does not affect verification. **The tag layer is therefore
+only partly revisable, and nothing in the docs said so anywhere.** Stated now in README, the xed
+guide, the bench sheet and tag reference A.12, and pinned by
+`test_ONLY_source_is_sealed_into_the_mint` — which also guards the seal's SCOPE: widen the mint
+to cover more tags and that test fails, so the widening must be declared rather than shipped.
+
+**Companion doc fix, raised by the sovereign reading the published README.** The canonical
+pile-format example showed `@topic:` and `@source:` alone — no `@act:`, no `@path:`. Not
+*retired* vocabulary (`@topic:` is rehabilitated as a legitimate index entry), but the
+**dead-tag shape the project's own one-line rule forbids**: *a noun in a drawer*. The canonical
+example was teaching against the discipline it exists to introduce. Fixed in all three docs.
+
+| File | Role | SHA-256 |
+|---|---|---|
+| `scribe.py` | frozen core | `e9aa4313fd27a1c0f75e7718bd788f76af1a11da820b5397e765bb2833ba7137` |
+| `test_scribe.py` | core tests (136) | `e5dbb51f9a5fa9fa2a40e0a2c1f041b18a2575bd9a66cd1ed76b8160a06acbbb` |
+
+**Test attestation at v1.3.4:** 136 tests pass (135 + 1).
+
+---
+
 ## v1.3.3 — "the pile audits itself, and says what happened rather than grading it" (2026-08-02) — CURRENT
 
 A named new version, not a silent edit (§5.8). One new read-only verb, `scribe verify`.

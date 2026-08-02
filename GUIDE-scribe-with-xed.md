@@ -100,12 +100,18 @@ internalise:
 The block header looks like this and is plain text you can read with Scribe switched off:
 
 ```
-@@ #c98b 2026-07-07T19:48:03.112904 @act:protect-against-bit-rot @topic:nas @source:gemini @mint:c98b4f1a…64 hex…
+@@ #c98b 2026-07-07T19:48:03.112904 @act:protect-against-bit-rot @path:toward-integrity-over-convenience @topic:nas @source:gemini @mint:c98b4f1a…64 hex…
 ZFS vs ext4: use ZFS on the NAS for checksums and snapshots.
 ```
 
 `@@` starts a block; `#c98b` is its **handle**; the `@key:value` tags are what views filter
 on. Everything after the header line, until the next `@@`, is your verbatim text.
+
+**The two tags carrying the meaning are `@act:` and `@path:`** — what the block *does*, and
+what it *reaches toward*. `@topic:` is the label on the drawer: it helps you find the block,
+it does not say what the block means. A block tagged with a topic and nothing else is what the
+bench sheet calls a dead tag, *a noun in a drawer*. Which tags to write is that sheet's
+business, not this guide's — but the example above is the shape to copy.
 
 **Two names on that line, doing two different jobs (new in v1.3.0).** This is worth one
 minute, because it changes what you can safely type:
@@ -223,6 +229,13 @@ block *is*. A block with no topic just lives in arrival order and shows up in no
 — which is fine; tag it later with `scribe tag c98b pile.txt --topic nas` when you decide.
 (One tag is not yours: `scribe tag … --tag mint:…` is **refused**. The identity is minted
 once, at capture, and is not vocabulary.)
+
+**And one tag is yours but is sealed: `@source:`.** It is folded into the block's identity at
+capture, so changing it later is a *visible* act — `scribe verify` will report the block as
+`edited in place since capture`. That is deliberate: re-attributing a saying, relabelling
+handed-in material as your own or your own as an AI's, should never be silent. Correct it when
+it is wrong, and let the record show you did. **It is the only tag sealed this way** — every
+other tag, `@topic:` and `@act:` and the rest, you may revise freely with no trace.
 
 Repeat, block by block, whenever you're already touching that material. There's no
 "migration day" — the pile fills as you work.

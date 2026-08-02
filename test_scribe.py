@@ -1445,6 +1445,36 @@ class TestMintAudit(unittest.TestCase):
         self.assertEqual(scribe.audit_mints(blocks, self.g)["states"][0],
                          scribe.EDITED_IN_PLACE)
 
+    def test_ONLY_source_is_sealed_into_the_mint(self):
+        """THE DECLARED SURFACE, pinned so it is a statement rather than a discovery.
+
+        The mint is over genesis+ordinal+ts+source+body, so `@source:` — alone among tags —
+        is FROZEN INTO THE IDENTITY: a saying cannot be silently re-attributed, and editing
+        it honestly reports `edited in place`. Every OTHER tag is freely revisable and does
+        not affect verification, which means the tag layer is only PARTLY revisable. That
+        asymmetry is a real property of the format and must never be something a keeper
+        finds out by accident (§3.8).
+
+        Also the standing guard on the seal's SCOPE: if anyone ever widens the mint to cover
+        more tags, this test fails and the widening has to be declared rather than shipped."""
+        blocks = self._pile(["a body"])
+        b = blocks[0]
+        # free: adding, changing and removing ordinary vocabulary changes nothing
+        for add in (("topic", "zfs"), ("act", "protect-against-bit-rot"),
+                    ("path", "toward-integrity"), ("aspect", "manifested")):
+            b.tags = scribe._insert_before_mint(b.tags, add)
+            self.assertEqual(scribe.audit_mints(blocks, self.g)["states"][0],
+                             scribe.AS_CAPTURED,
+                             f"@{add[0]}: must NOT be sealed — the vocabulary stays revisable")
+        b.tags = [(k, v) for k, v in b.tags if k != "topic"]
+        self.assertEqual(scribe.audit_mints(blocks, self.g)["states"][0], scribe.AS_CAPTURED)
+        # sealed: re-attributing the saying is visible
+        b.tags = [(("source", "someone-else") if k == "source" else (k, v))
+                  for k, v in b.tags]
+        self.assertEqual(scribe.audit_mints(blocks, self.g)["states"][0],
+                         scribe.EDITED_IN_PLACE,
+                         "@source: IS sealed — a saying must not be silently re-attributed")
+
     def test_THE_LANGUAGE_GUARD_no_fault_words_anywhere_in_the_output(self):
         """THE LOAD-BEARING TEST, and it guards a RULING rather than a behaviour.
 

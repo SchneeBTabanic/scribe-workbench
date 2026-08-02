@@ -670,3 +670,64 @@ property, for the same reason.
 
 Full writeup: `RIPE-LEDGER.txt` `#8a29` (the case), `#d100` (the ratification), `#3f02` → `#2b30`
 (the append-and-supersede ruling and its build); provenance: `PROVENANCE.md` v1.3.0 and v1.3.1.
+
+## A.12 — `@source:` is sealed into the identity: an inherited default, re-justified rather than removed (2026-08-02)
+
+**Raised by Schnee, and the question was the right one:** *"what is this continued obsession
+with `@source:`? Why out of all the keys is it so important and chosen? When I use AI LLMs,
+eventually my prolonged use may result in myself being mirrored back to me — in which case
+`@source:` might end up pointing to the same identity and be empty in the future. I wonder why
+it has this prominence."*
+
+**The honest answer to "why is it in the mint" is: it was never ruled on, only inherited.**
+`gen_id(ts, body, source)` included it; that function was never discussed at any gate; and when
+`gen_mint(genesis, ordinal, ts, source, body)` was written, `source` came along because it was
+already in the recipe. **That is the same pattern as `#<id>` shipping unruled** (§3.16's own
+worked example): an unexamined default carried forward under a new name. The identity work
+fixed one inheritance and passed this one through untouched.
+
+**And as entropy — its ostensible job — it fails, measurably.** It is the *lowest*-entropy field
+in a block, near-constant across a pile, contributing near-zero discrimination. The mint's real
+guarantee comes from `genesis + ordinal`, which cannot collide. One of three original inputs was
+spent on a field that barely varies.
+
+**The turn, and why it is kept.** A failing test written for `scribe verify` (v1.3.3) revealed
+that `source` is doing a *different* job, and doing it well: **remove or change a `@source:` tag
+and the block stops matching its mint.** Provenance is therefore **frozen into identity** — a
+saying cannot be silently re-attributed. You cannot quietly relabel a handed-in block as your
+own, nor your own as an AI's. That is precisely the axis this project cares about most: who
+stands behind this text (`@origin:`, `@attests:`, and the stamp's own *"PROVENANCE IS PER BLOCK,
+NEVER PER FILE"*). **An accident that turns out to be right, for a completely different reason
+than the one it was included for.** It was put there as entropy and fails at that; it functions
+as an attribution seal and succeeds.
+
+**The mirror objection sharpens it rather than undermining it.** As a keeper's practice matures,
+`@source:` may converge toward one value and lose its discriminating power. But discriminating
+between blocks was never its real job here. Its job is to record **a claim about origin, frozen
+at the moment of declaration** — and *a uniform value is not an empty one*. "In this period all
+my material was self-sourced" is a true and historically meaningful record, exactly the kind of
+fact worth freezing rather than leaving revisable, **precisely because the boundary is
+dissolving.** When the distinction gets harder to feel, the recorded claim becomes more
+valuable, not less. *The mirror is the argument for the seal.*
+
+**RULED, and it does not touch behaviour.** `source` stays in the mint — removing it would
+invalidate every existing mint, a real migration cost, for a field now doing genuine work. What
+changed is the **justification in writing**: `gen_mint`'s docstring said it was there as extra
+entropy, which was false and measurably so, and now says what it actually does.
+
+**THE DECLARED SURFACE, which is the part this sheet owes its readers (§3.8).** `@source:` is
+**the only tag inside the mint**. Every other key on this sheet — `@topic:`, `@act:`, `@path:`,
+`@aspect:`, all of them — is freely revisable and does not affect verification. **So the tag
+layer is only PARTLY revisable**, and nothing said so anywhere until now. The consequence, stated
+rather than discovered: correcting a `@source:` value will honestly report `edited in place since
+capture`, and that is right, because re-attributing a saying is a significant act that should be
+visible. Pinned by `test_ONLY_source_is_sealed_into_the_mint`, which also guards the seal's
+SCOPE: widen the mint to cover more tags and that test fails, so the widening must be declared
+rather than shipped.
+
+**Companion finding, same session:** the README's canonical pile-format example showed
+`@topic:` and `@source:` alone — no `@act:`, no `@path:`. Not *retired* vocabulary (A.4
+rehabilitates `@topic:` as a legitimate index entry, Knuth's WEB index carrying concepts and
+not only identifiers), but the **dead-tag shape this sheet's own one-line rule forbids**: *a
+noun in a drawer*. The canonical example was quietly teaching against the discipline it was
+meant to introduce. Fixed in README, the xed guide, and the bench sheet's worked block.

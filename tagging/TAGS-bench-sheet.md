@@ -55,6 +55,14 @@ sheet is vocabulary you write. These three are written by scribe:
 The point of the rule is the first row. The other two are still yours to write; they simply are
 no longer *only* yours. Full detail in the two entries below.
 
+**And one key of YOURS is sealed, which is worth knowing before you tidy a value: `@source:`.**
+It is folded into the block's identity at capture, so editing it later makes `scribe verify`
+report that block as `edited in place since capture`. Correct: re-attributing a saying — a
+handed-in block relabelled as your own, or yours as an AI's — should be visible, never silent.
+**It is the only tag sealed this way.** Every other key on this sheet you may add, change or
+remove freely with no trace, which means the vocabulary stays genuinely yours to revise while
+the attribution stays pinned to the moment you made it.
+
 ---
 
 ## Every key does one of two jobs — and this is what decides whether it can ever make a VIEW

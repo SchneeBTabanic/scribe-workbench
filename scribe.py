@@ -46,7 +46,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 
-VERSION = "1.3.3"
+VERSION = "1.3.4"
 
 # The one external process the HTML path shells to. Recorded for provenance (§4.4); the
 # tool discloses the running pandoc via `scribe doctor` and hard-fails if it is absent.
@@ -531,8 +531,33 @@ def gen_mint(genesis, ordinal, ts, source, body):
       ordinal  WHERE in that pile's arrival order (the `position`)
       ts       WHEN it was declared               (the `act`)
 
-    `source` and `body` follow as extra entropy and nothing relies on them; `source` in
-    particular was MEASURED as the lowest-entropy field in the old scheme.
+    `body` and `source` follow. **`source` IS NOT HERE AS ENTROPY, and saying so was wrong**
+    — it was MEASURED as the lowest-entropy field in the old scheme, near-constant across a
+    pile, and the mint's actual guarantee comes from genesis+ordinal, which cannot collide.
+    It was inherited from `gen_id(ts, body, source)`, which no gate ever ruled on, and carried
+    forward under a new name: the identity work fixed one unexamined default and passed this
+    one through untouched.
+
+    RE-JUSTIFIED, 2026-08-02, because it turned out to be doing a different job well.
+    Including `source` SEALS THE ATTRIBUTION: a block's claim about which mind said it is
+    frozen into its identity at the moment of declaration, so **a saying cannot be silently
+    re-attributed.** You cannot quietly relabel a handed-in block as your own, or your own as
+    an AI's, without `scribe verify` reporting the block as edited in place. That is the axis
+    this project cares about most (§"PROVENANCE IS PER BLOCK" in the stamp; `@origin:`,
+    `@attests:`), and it is worth more than the entropy it fails to provide.
+
+    It survives the obvious objection, too: as a keeper's practice matures `@source:` may
+    converge on one value and lose all discriminating power — but discriminating between
+    blocks was never its real job here. **A uniform value is not an empty one**; "in this
+    period everything was self-sourced" is a true historical claim, and the more the human/AI
+    boundary dissolves in practice, the more worth freezing the claim made at the time.
+
+    DECLARED CONSEQUENCE (§3.8), because it must be stated rather than discovered: `@source:`
+    is the ONLY tag inside the mint. Every other tag — `@topic:`, `@act:`, `@path:`, the whole
+    vocabulary — is freely revisable and does not affect verification. So the tag layer is
+    only PARTLY revisable, and editing `@source:` will honestly report `edited in place since
+    capture`. That is correct: re-attributing a saying is a significant act and should be
+    visible. Pinned by `test_ONLY_source_is_sealed_into_the_mint`.
 
     WHY `ordinal` IS NOT OPTIONAL — found by a test, not by reasoning. With `--ts` pinned
     (which capture supports, and tests need), genesis+ts+source+body ALL collapse for two
