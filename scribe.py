@@ -46,7 +46,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 
-VERSION = "1.3.2"
+VERSION = "1.3.3"
 
 # The one external process the HTML path shells to. Recorded for provenance (§4.4); the
 # tool discloses the running pandoc via `scribe doctor` and hard-fails if it is absent.
@@ -920,6 +920,97 @@ def duplicate_handles(blocks):
         if b.id:
             seen.setdefault(b.id, []).append(b)
     return {h: bs for h, bs in seen.items() if len(bs) > 1}
+
+
+# ---------------------------------------------------------------------------
+# The mint audit — is a body still the one it was minted from?
+#
+# The mint is sha256(genesis + ordinal + ts + source + body). Every one of those
+# five inputs is recoverable FROM THE FILE, so the mint can be re-derived and
+# compared. That makes the pile self-auditing at rest, and it is the intra-pile
+# twin of `verify-export` (which does the same for a DERIVED view, via
+# content_fingerprint). Same principle, one level in.
+#
+# FACT-LANGUAGE, AND IT IS THE WHOLE DESIGN CONSTRAINT — not a wording
+# preference. v1.3.1 ruled the hand-edit a LEGITIMATE SOVEREIGN ACT: the second
+# doorway, chosen per act, history-in-restic instead of history-in-the-pile
+# (§3.1 — the tool binds itself, not the human). A verb that reported that act as
+# `MISMATCH`, `UNVERIFIED`, `MODIFIED`, or at any severity would recast a
+# sanctioned choice as a defect, and a sovereign who feels told off for using his
+# own door stops using it. That is the identical trap the path-sovereignty
+# witness already solved once: `substituted` is a FACT, never a fault — and the
+# tag-validator's `[HELD]` tier is the same move (a witness formally separate
+# from a fault, after Debian's `classification`).
+#
+# So: every state below is a statement about WHAT HAPPENED. None is a grading of
+# it. There is no severity anywhere in this verb, and there must never be one.
+#
+# THE DELETION SIGNATURE, NAMED RATHER THAN LEFT TO LOOK LIKE DAMAGE. `ordinal`
+# is a block's POSITION at capture, frozen. Remove a block from the middle and
+# every later block's ordinal stops matching its position, so a naive check
+# reports the entire tail as changed — a wave of alarm produced by one ordinary
+# act. Cutting a scene from a novel would light up everything after it. So the
+# audit SEARCHES for the shift: if a trailing run all re-derive cleanly at a
+# constant ordinal offset, that is not N edits, it is K blocks removed (or
+# inserted) earlier, and the bodies are untouched. The offset is DEMONSTRATED,
+# not guessed — the tail either verifies at that offset or it does not.
+# ---------------------------------------------------------------------------
+
+AS_CAPTURED = "as captured"
+EDITED_IN_PLACE = "edited in place since capture"
+NO_MINT = "no mint — this check did not run"
+
+
+def rederive_mint(block, genesis, ordinal):
+    """The mint this block would receive if it were declared, now, at `ordinal`."""
+    return gen_mint(genesis, ordinal, block.ts,
+                    _tag_value(block, "source") or "unknown", block.body)
+
+
+def _states_at(blocks, genesis, offset=0, start=0):
+    """Verdict per block from `start`, re-deriving with position + offset."""
+    out = []
+    for i in range(start, len(blocks)):
+        b = blocks[i]
+        stored = _tag_value(b, MINT_KEY)
+        if not stored:
+            out.append(NO_MINT)
+        elif stored == rederive_mint(b, genesis, i + offset):
+            out.append(AS_CAPTURED)
+        else:
+            out.append(EDITED_IN_PLACE)
+    return out
+
+
+def audit_mints(blocks, genesis):
+    """Re-derive every block's mint and report what the file says happened.
+
+    Returns {states: [...], shift: None | {at, offset, count}, unminted: n}.
+
+    `shift` is set only when a trailing run of differing blocks ALL re-derive
+    cleanly at one constant ordinal offset — the demonstrated signature of blocks
+    removed from (offset > 0) or inserted into (offset < 0) the pile earlier.
+    When it is set, those blocks' bodies are `as captured`; only their POSITION
+    moved, and position is not something a body can be edited into."""
+    real = [b for b in blocks if b.id]
+    states = _states_at(real, genesis, 0)
+    shift = None
+    differing = [i for i, s in enumerate(states) if s == EDITED_IN_PLACE]
+    # A contiguous run reaching the END is the only pattern an ordinal shift can
+    # produce; scattered singles, or a run that stops short, are edits.
+    if differing and differing[-1] == len(states) - 1:
+        at = differing[0]
+        if list(range(at, len(states))) == differing and at > 0:
+            span = len(real) - at
+            for d in list(range(1, at + 1)) + list(range(-1, -span - 1, -1)):
+                if all(s == AS_CAPTURED for s in _states_at(real, genesis, d, at)):
+                    shift = {"at": at, "offset": d, "count": abs(d),
+                             "removed": d > 0, "blocks": real[at:]}
+                    for i in range(at, len(states)):
+                        states[i] = AS_CAPTURED
+                    break
+    return {"states": states, "shift": shift,
+            "unminted": sum(1 for s in states if s == NO_MINT), "blocks": real}
 
 
 # ---------------------------------------------------------------------------
@@ -1872,6 +1963,94 @@ def cmd_backlinks(args):
     return EXIT_FINDINGS if bad_total else 0
 
 
+def cmd_verify(args):
+    """`scribe verify PILE [PILE...]` — is each block still the one its @mint: was issued
+    for? The mint covers the body, the timestamp and @source:, so this speaks to all three.
+
+    Read-only, and REPORTS IN FACT-LANGUAGE ONLY. An edited body is not a fault: v1.3.1
+    ruled the hand-edit a sanctioned doorway, so this verb says what happened and never
+    grades it. There is no severity here and there must never be one.
+
+    EXIT CODES, and the distinction is §3.8's: `0` means every block's state was
+    DETERMINED — whether as captured or edited in place, both are answers. `2` means the
+    check COULD NOT RUN somewhere (a block with no `@mint:`), because a check that did not
+    run must never be reported the same way as one that passed."""
+    undetermined = 0
+    for path in args.pile:
+        with open(path, "r", encoding="utf-8") as fh:
+            text = fh.read()
+        genesis, declared = genesis_of(text, path)
+        rep = audit_mints(parse_pile(text), genesis)
+        blocks, states = rep["blocks"], rep["states"]
+        n_edit = sum(1 for s in states if s == EDITED_IN_PLACE)
+        n_kept = sum(1 for s in states if s == AS_CAPTURED)
+        sys.stdout.write(
+            f"{path} — {len(blocks)} block(s): {n_kept} as captured, "
+            f"{n_edit} edited in place, {rep['unminted']} with no mint"
+            f"{'' if declared else '  (no @genesis: line — a pile born before 2026-08-01)'}\n")
+
+        if rep["shift"]:
+            sh = rep["shift"]
+            verb = "removed from" if sh["removed"] else "inserted into"
+            sys.stdout.write(
+                f"  POSITION SHIFT, not edits — and this is the ordinary shape of "
+                f"{'cutting' if sh['removed'] else 'adding'} material.\n"
+                f"    From #{sh['blocks'][0].id} onward, every block re-derives exactly at a "
+                f"constant offset of {sh['offset']}, which is what {sh['count']} block(s) "
+                f"{verb} the pile earlier does to the position each later block was minted at.\n"
+                f"    Their BODIES ARE AS CAPTURED — only their position moved, and a position "
+                f"is not something a body can be edited into. {len(sh['blocks'])} block(s) are "
+                f"reported as captured above on that basis.\n")
+
+        # WHOLLY-LEGACY PILES ARE SUMMARISED, NOT ENUMERATED — and the choice is declared.
+        # Naming 43 unminted blocks one by one in a pile that predates v1.3.0 entirely is
+        # noise that buries the one line worth reading (§4.6). But a block with no mint in a
+        # pile that HAS them is the interesting case — typed straight into the file — so
+        # that one is always named. The rule: enumerate the anomaly, summarise the norm,
+        # and say which was done. The count is stated either way, so nothing is hidden.
+        # Summarise when the unminted are the MAJORITY (the norm here), enumerate when
+        # they are the minority (the anomaly worth naming). An all-or-nothing rule was
+        # wrong: a TRANSITIONAL pile — 43 legacy blocks and 5 new ones, which is what the
+        # sovereign's real ledger looks like today — is the common case, and it printed 86
+        # lines while calling them "the exception".
+        bulk_legacy = rep["unminted"] > max(5, len(blocks) // 2)
+        for b, s in zip(blocks, states):
+            if s == AS_CAPTURED or (s == NO_MINT and bulk_legacy):
+                continue
+            first = (b.body.splitlines() or [""])[0][:56]
+            sys.stdout.write(f"    #{b.id}  {b.ts}  {s}\n      {first!r}\n")
+        undetermined += rep["unminted"]
+
+        if n_edit:
+            sys.stdout.write(
+                "  'Edited in place' is a STATEMENT, not a complaint: it is the second doorway\n"
+                "  working as ruled — the block was corrected in the file, keeping that history\n"
+                "  in your backups rather than in the pile. Precisely, it means the block is not\n"
+                "  the one its @mint: was issued for; the mint covers the BODY, the TIMESTAMP and\n"
+                "  @source:, so a change to any of the three says so here. What it cannot tell\n"
+                "  you is WHAT changed — no earlier text is kept in the pile, by design, so only\n"
+                "  restic or git holds the before.\n")
+        if rep["unminted"] and bulk_legacy:
+            every = rep["unminted"] == len(blocks)
+            sys.stdout.write(
+                f"  {'No block here carries' if every else 'Most blocks here carry no'} @mint: — "
+                f"{rep['unminted']} of {len(blocks)} predate the identity\n"
+                "  split (v1.3.0), so THE CHECK DID NOT RUN for them. That is not a clean result\n"
+                "  and is deliberately not reported as one; nothing is wrong with the pile and\n"
+                "  nothing is upgraded behind you. Blocks captured from now on carry mints and\n"
+                "  are checked. NOT LISTED ONE BY ONE — here they are the norm, not the anomaly,\n"
+                "  and naming each would bury the line worth reading. The count is the whole of\n"
+                "  it; `scribe duplicates` lists them individually if you want them.\n")
+        elif rep["unminted"]:
+            sys.stdout.write(
+                f"  {rep['unminted']} block(s) above carry no @mint: in a pile that otherwise has\n"
+                "  them — typed straight into the file, or moved in from elsewhere. Named rather\n"
+                "  than summarised, because in this pile that is the exception. THE CHECK DID NOT\n"
+                "  RUN for them, and a check that did not run must never look like one that\n"
+                "  passed.\n")
+    return EXIT_FINDINGS if undetermined else 0
+
+
 def cmd_duplicates(args):
     """`scribe duplicates PILE [PILE...]` — every handle used by more than one block.
 
@@ -2165,6 +2344,15 @@ def build_parser():
                              "declares collisions, never repairs them")
     dp.add_argument("pile", nargs="+", help="one or more piles to audit")
     dp.set_defaults(func=cmd_duplicates)
+
+    vf = sub.add_parser("verify",
+                        help="is each block still the one its @mint: was issued for? "
+                             "re-derives "
+                             "every @mint: from the file itself and says what happened — "
+                             "'as captured' / 'edited in place since capture'. Read-only, "
+                             "no severities: a hand-edit is a sanctioned act, not a fault")
+    vf.add_argument("pile", nargs="+", help="one or more piles to audit")
+    vf.set_defaults(func=cmd_verify)
 
     ac = sub.add_parser("activate",
                         help="derive every block currently declaring interest in a "

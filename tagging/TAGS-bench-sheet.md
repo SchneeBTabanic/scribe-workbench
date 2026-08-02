@@ -10,7 +10,7 @@ Two companions, and neither is needed to start:
 
 ---
 
-## Four mechanical rules. Read these once; they will save you an evening.
+## Five mechanical rules. Read these once; they will save you an evening.
 
 **1. A tag value must never contain a space.** Hyphenate instead: `@act:extend-insight`, never
 `@act:extend insight`. **As of scribe v1.1.0 this one is caught for you** — scribe refuses to write
@@ -464,7 +464,12 @@ but it is no longer the only route, and it was the route that tripped the space 
 4. `scribe toc pile.txt --by path` — read your own pile along the axis of reaching rather than
    subject. This is the honest test of whether your paths are alive: if two blocks reach the same
    way, they gather; if every path is unique, they don't, and that tells you something too.
-5. `scribe duplicates pile.txt` — **once per pile, and then only when you inherit an old one.**
+5. `scribe verify pile.txt` — **which blocks are still exactly as captured, and which you
+   edited by hand afterwards.** Useful on this sheet specifically because `@mint:` covers the
+   body, the timestamp *and* `@source:` — so if you hand-edit a `@source:` value the block will
+   report `edited in place since capture`, correctly. It reports in fact-language only: a
+   hand-edit is a sanctioned act, never a fault, and this verb carries no severities.
+6. `scribe duplicates pile.txt` — **once per pile, and then only when you inherit an old one.**
    On a pile made by v1.3.0 or later this always comes back empty, because handles are checked as
    they are issued. On an older pile it is how you find out whether two blocks answer to the same
    name — which matters most for the pointer keys above, since a `@ref:` into an ambiguous handle

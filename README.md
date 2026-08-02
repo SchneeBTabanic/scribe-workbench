@@ -144,6 +144,11 @@ scribe backlinks TARGET PILE [PILE...] # derive every block whose tag VALUE name
     TARGET (the reverse of @ref:/@overrules:/etc.) — TARGET is #id (this pile) or
     pile.txt#id (a named pile, for relations BETWEEN piles); computed fresh, never
     written back — see tagging/TAG-KEYS-reference-v1-DRAFT.md A.9
+scribe verify PILE [PILE...]          # is each block still the one its @mint: was
+    issued for? Re-derives every mint from the file itself and reports in FACT-language
+    only: `as captured` / `edited in place since capture` / `no mint — this check did
+    not run`. A hand-edit is a sanctioned act, so there are no severities here and never
+    will be. A cut block is reported as a POSITION SHIFT, not as a wave of edits
 scribe duplicates PILE [PILE...]      # every handle used by more than one block, with
     each one's @mint: so you can see whether they are one saying or two. Read-only:
     it declares collisions and never repairs them (re-minting would break every
@@ -218,7 +223,7 @@ core never depends on it. See `edge/README.md`.
 
 ## Freeze
 
-v1.3.2 current (additive over v1.0-frozen; frozen-ness was ruled to never be a reason
+v1.3.3 current (additive over v1.0-frozen; frozen-ness was ruled to never be a reason
 not to correct the tool — see `PROVENANCE.md`'s v1.1.0 entry). Stdlib-only,
 offline-rebuildable. Verify with `scribe doctor`. License **AGPL-3.0-or-later**.
 

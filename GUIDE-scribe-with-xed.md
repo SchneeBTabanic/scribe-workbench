@@ -364,6 +364,8 @@ safe direction you already trust.
    hand off  :  scribe export topic:X pile.txt --bare > for-ai.txt ; xed for-ai.txt &
    who points at it: scribe backlinks '#c98b' pile.txt   # v1.1.2 — see below
    two blocks, one name: scribe duplicates pile.txt      # v1.3.0 — see below
+   what did I change: scribe verify pile.txt             # v1.3.3 — as captured, or
+                                                         #   edited by hand? see below
 ```
 
 `scribe toc pile.txt` any time prints the whole table of contents from your tags — the list
@@ -508,6 +510,51 @@ moment. Run `scribe stamp` on a pile you have unstamped, or leave it.
 `scribe stamp pile.txt` gives it a genesis from that moment on, so blocks captured *from now*
 are minted properly. Blocks already in it keep exactly the handles they have. Leaving it alone
 is also a fine answer.
+
+**`scribe verify` (v1.3.3) — "is this block still the one I captured?"** You have two doorways
+for changing a block: `push`, which appends and leaves a trail, and your own editor, which
+leaves none in the pile. This tells you afterwards which door each block went through.
+
+```bash
+scribe verify pile.txt
+#   pile.txt — 3 block(s): 2 as captured, 1 edited in place, 0 with no mint
+#       #b5af  2026-08-02T13:36:51.552200  edited in place since capture
+#         'Original sentence one. Rewritten final sentence.'
+```
+
+It works because the mint was computed from the block's own body, timestamp and `@source:` —
+so re-computing it from what is in the file now and comparing to the stored `@mint:` says
+whether anything moved. No database, no history, no copy of your old text anywhere.
+
+**Read the wording carefully, because it is deliberate.** `edited in place since capture` is a
+**statement of fact, not a complaint.** Editing a block by hand is a door the tool deliberately
+leaves open for you; scribe has no business grading you for walking through it. That is why
+this verb has no severities, no "invalid", no warnings — and a test enforces that, so it
+cannot drift into scolding you later.
+
+Three things it will tell you:
+
+- **`as captured`** — untouched since it was written.
+- **`edited in place since capture`** — the body, timestamp or `@source:` changed in the file.
+  It cannot tell you *what* changed: the pile keeps no earlier copy, by design, so only restic
+  or git holds the before.
+- **`no mint — this check did not run`** — a block typed straight in, or captured before
+  v1.3.0. Not a fault, and deliberately *not* reported as a clean pass either.
+
+**If you cut a block out of the pile, it will not panic.** Deleting a block shifts every later
+block's position, and a naive check would report the whole rest of the file as changed — which
+would be intolerable if you were, say, cutting a scene from a long piece of writing. Instead it
+recognises the pattern and says so:
+
+```
+POSITION SHIFT, not edits — and this is the ordinary shape of cutting material.
+  From #05f4 onward, every block re-derives exactly at a constant offset of 1, which is what
+  1 block(s) removed from the pile earlier does to the position each later block was minted at.
+  Their BODIES ARE AS CAPTURED — only their position moved.
+```
+
+On an old pile (made before v1.3.0) it will say most blocks have no mint and that the check
+therefore did not run on them. That is honest rather than reassuring, which is the point.
 
 **Your pile explains itself to whoever opens it.** A pile created from v1.1.0 onward starts with
 a short comment header saying what the format is, which commands search it properly, and why a

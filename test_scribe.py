@@ -1331,6 +1331,219 @@ class TestCaptureMintsNominally(unittest.TestCase):
         self.assertIsNone(scribe.HEADER_RE.match(bad))
 
 
+class TestMintAudit(unittest.TestCase):
+    """`scribe verify` — the pile auditing itself at rest. The mint's five inputs are all
+    recoverable from the file, so it can be re-derived and compared; this is the intra-pile
+    twin of verify-export's content_fingerprint."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.g = "a" * 64
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def _pile(self, bodies):
+        blocks = []
+        for i, body in enumerate(bodies):
+            b, _ = scribe.make_block(body, [("topic", "t"), ("source", "self")], "self",
+                                     ts=f"2026-08-02T10:00:0{i}.000000",
+                                     genesis=self.g, taken={x.id for x in blocks}, ordinal=i)
+            blocks.append(b)
+        return blocks
+
+    def test_untouched_pile_is_all_as_captured(self):
+        rep = scribe.audit_mints(self._pile(["one", "two", "three"]), self.g)
+        self.assertEqual(rep["states"], [scribe.AS_CAPTURED] * 3)
+        self.assertIsNone(rep["shift"])
+
+    def test_a_body_edited_in_place_is_named_and_only_that_one(self):
+        blocks = self._pile(["one", "two", "three"])
+        blocks[1].body = "two, with the final sentence rewritten"
+        rep = scribe.audit_mints(blocks, self.g)
+        self.assertEqual(rep["states"],
+                         [scribe.AS_CAPTURED, scribe.EDITED_IN_PLACE, scribe.AS_CAPTURED])
+
+    def test_editing_the_TIMESTAMP_is_caught_too(self):
+        """ts is a mint input, so an edit cannot be covered by adjusting the stamp."""
+        blocks = self._pile(["one", "two"])
+        blocks[0].ts = "2020-01-01T00:00:00.000000"
+        self.assertEqual(scribe.audit_mints(blocks, self.g)["states"][0],
+                         scribe.EDITED_IN_PLACE)
+
+    def test_a_DELETED_middle_block_is_a_position_shift_not_a_wave_of_edits(self):
+        """THE CASE THIS DESIGN EXISTS FOR. Cutting a scene is ordinary. A naive check
+        reports every later block as changed — alarm produced by one legitimate act. The
+        shift is DEMONSTRATED: the tail re-derives exactly at a constant offset."""
+        blocks = self._pile(["one", "two", "three", "four"])
+        del blocks[1]
+        rep = scribe.audit_mints(blocks, self.g)
+        self.assertIsNotNone(rep["shift"], "a cut block must not read as edited bodies")
+        self.assertEqual(rep["shift"]["offset"], 1)
+        self.assertEqual(rep["shift"]["count"], 1)
+        self.assertTrue(rep["shift"]["removed"])
+        self.assertEqual(rep["states"], [scribe.AS_CAPTURED] * 3,
+                         "bodies are as captured; only position moved")
+
+    def test_a_HAND_INSERTED_block_shifts_the_others_the_other_way(self):
+        """The realistic insertion: a block typed straight into the middle of the file. It
+        carries no mint of its own, and it pushes every later block one position past the
+        ordinal it was minted at — so the shift offset is NEGATIVE. Their bodies are
+        untouched and must be reported so."""
+        blocks = self._pile(["one", "two", "three"])
+        typed = scribe.Block(id="hand", ts="2026-08-02T09:30:00.000000",
+                             tags=[("topic", "t"), ("source", "self")],
+                             body="typed straight into the file")
+        blocks.insert(1, typed)
+        rep = scribe.audit_mints(blocks, self.g)
+        self.assertIsNotNone(rep["shift"], "an inserted block must not read as edited bodies")
+        self.assertEqual(rep["shift"]["offset"], -1)
+        self.assertFalse(rep["shift"]["removed"])
+        self.assertEqual(rep["states"][1], scribe.NO_MINT, "the typed block is unverifiable")
+        self.assertEqual([rep["states"][i] for i in (0, 2, 3)], [scribe.AS_CAPTURED] * 3)
+
+    def test_NAMED_LIMIT_a_block_moved_in_from_elsewhere_reads_as_edited(self):
+        """A block cut from one position and pasted at another carries a mint issued for
+        the position it came FROM, so it does not match where it now sits and no single
+        offset explains it alongside its neighbours. It is reported 'edited in place',
+        which is true in the only sense this verb can mean it: the block is not the one
+        that mint was issued for. Recorded so the absence of finer detection is deliberate
+        (§3.8) — recovering a move would need the prior file, which the pile does not keep."""
+        blocks = self._pile(["one", "two", "three"])
+        moved = blocks.pop(2)
+        blocks.insert(0, moved)
+        rep = scribe.audit_mints(blocks, self.g)
+        self.assertIn(scribe.EDITED_IN_PLACE, rep["states"])
+
+    def test_scattered_edits_are_NOT_read_as_a_shift(self):
+        """A run must reach the END to be a shift; edits in the middle stay edits."""
+        blocks = self._pile(["one", "two", "three", "four"])
+        blocks[1].body = "changed"
+        rep = scribe.audit_mints(blocks, self.g)
+        self.assertIsNone(rep["shift"])
+        self.assertEqual(rep["states"].count(scribe.EDITED_IN_PLACE), 1)
+
+    def test_a_block_with_no_mint_says_THE_CHECK_DID_NOT_RUN(self):
+        """§3.8: a check that did not run must never look like one that passed."""
+        blocks = self._pile(["one"])
+        legacy = scribe.Block(id="old1", ts="2026-01-01T00:00",
+                              tags=[("topic", "t"), ("source", "self")],
+                              body="captured before the split")
+        rep = scribe.audit_mints(blocks + [legacy], self.g)
+        self.assertEqual(rep["states"][1], scribe.NO_MINT)
+        self.assertEqual(rep["unminted"], 1)
+        self.assertIn("did not run", scribe.NO_MINT)
+
+    def test_NAMED_LIMIT_the_mint_covers_ts_and_source_not_only_the_body(self):
+        """Found by a failing test, not by reasoning. The mint is over genesis+ordinal+ts+
+        source+body, so REMOVING OR CHANGING @source: also makes a block stop matching its
+        mint — correctly, since @source: is part of what was declared. The consequence for
+        wording: this verb must never claim it detects *body* changes specifically. It
+        detects that the block is not the one the mint was issued for."""
+        blocks = self._pile(["one", "two"])
+        blocks[0].tags = [(k, v) for k, v in blocks[0].tags if k != "source"]
+        self.assertEqual(scribe.audit_mints(blocks, self.g)["states"][0],
+                         scribe.EDITED_IN_PLACE)
+
+    def test_THE_LANGUAGE_GUARD_no_fault_words_anywhere_in_the_output(self):
+        """THE LOAD-BEARING TEST, and it guards a RULING rather than a behaviour.
+
+        v1.3.1 ruled the hand-edit a legitimate sovereign act — the second doorway. A verb
+        that reported it as MISMATCH/INVALID/at a severity would recast a sanctioned choice
+        as a defect, and a sovereign who feels told off for using his own door stops using
+        it. `substituted` is a fact, never a fault (the path-sovereignty witness); `[HELD]`
+        is the same move in the tag-validator. Prose cannot hold that line across future
+        edits — this test can, and it is why it exists."""
+        import contextlib, io
+        path = os.path.join(self.dir, "p.txt")
+        blocks = self._pile(["one", "two", "three"])
+        blocks[1].body = "edited by hand"
+        legacy = scribe.Block(id="old1", ts="2026-01-01T00:00",
+                              tags=[("topic", "t"), ("source", "self")], body="no mint here")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(scribe.stamp_for(self.g) + "\n"
+                     + scribe.serialize_pile(blocks + [legacy]))
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            scribe.main(["verify", path])
+        out = buf.getvalue().lower()
+        for word in ("mismatch", "invalid", "corrupt", "tamper", "unverified", "error",
+                     "warning", "severity", "violation", "illegal", "suspicious", "modified"):
+            self.assertNotIn(word, out, f"fault-language {word!r} reached the output")
+        self.assertIn("as captured", out)
+        self.assertIn("edited in place since capture", out)
+
+    def test_bulk_legacy_is_summarised_and_still_says_it_did_not_run(self):
+        """Enumerate the anomaly, summarise the norm, declare which was done. The rule is
+        MAJORITY, not all-or-nothing: found by running it on the sovereign's real ledger,
+        where 43 legacy blocks sit beside 5 minted ones and an all-or-nothing rule printed
+        86 lines while calling them 'the exception'. It must still not read as a pass."""
+        import contextlib, io
+        path = os.path.join(self.dir, "legacy.txt")
+        with open(path, "w", encoding="utf-8") as fh:
+            for i in range(8):
+                fh.write(f"@@ #old{i} 2026-01-0{i+1}T00:00 @topic:t @source:self\nbody {i}\n\n")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = scribe.main(["verify", path])
+        out = buf.getvalue()
+        self.assertEqual(rc, scribe.EXIT_FINDINGS, "a check that did not run is not a pass")
+        self.assertIn("CHECK DID NOT RUN", out)
+        self.assertNotIn("#old3", out, "the norm is summarised, not enumerated")
+        self.assertIn("8", out, "the count is still stated, so nothing is hidden")
+
+    def test_a_TRANSITIONAL_pile_mostly_legacy_is_still_summarised(self):
+        """The real shape of the sovereign's ledger today: a few minted blocks appended to
+        a long legacy pile. Majority-legacy summarises even though it is not all-legacy."""
+        import contextlib, io
+        path = os.path.join(self.dir, "trans.txt")
+        blocks = self._pile(["new one", "new two"])
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(scribe.stamp_for(self.g) + "\n")
+            for i in range(9):
+                fh.write(f"@@ #old{i} 2026-01-0{i+1}T00:00 @topic:t @source:self\nbody {i}\n\n")
+            fh.write(scribe.serialize_pile(blocks))
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            scribe.main(["verify", path])
+        out = buf.getvalue()
+        self.assertNotIn("#old4", out, "majority-legacy summarises, all-or-nothing was wrong")
+        self.assertIn("9 of 11", out, "and says exactly how many did not run")
+
+    def test_an_unminted_block_in_a_MINTED_pile_is_named_individually(self):
+        """The inverse, and the interesting case: a block typed straight into a pile that
+        otherwise carries mints is the exception, so it is named."""
+        import contextlib, io
+        path = os.path.join(self.dir, "mixed.txt")
+        blocks = self._pile(["one", "two"])
+        typed = scribe.Block(id="hand", ts="2026-08-02T11:00:00.000000",
+                             tags=[("topic", "t"), ("source", "self")], body="typed in")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(scribe.stamp_for(self.g) + "\n" + scribe.serialize_pile(blocks + [typed]))
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            scribe.main(["verify", path])
+        self.assertIn("#hand", buf.getvalue())
+
+    def test_exit_0_when_determined_and_2_only_when_the_check_could_not_run(self):
+        """An edited body is an ANSWER, so exit 0. A missing mint is a check that did not
+        happen, so exit 2 — the two must not be signalled the same way."""
+        import contextlib, io
+        edited = os.path.join(self.dir, "e.txt")
+        blocks = self._pile(["one", "two"])
+        blocks[0].body = "edited"
+        with open(edited, "w", encoding="utf-8") as fh:
+            fh.write(scribe.stamp_for(self.g) + "\n" + scribe.serialize_pile(blocks))
+        nomint = os.path.join(self.dir, "n.txt")
+        legacy = scribe.Block(id="old1", ts="2026-01-01T00:00",
+                              tags=[("topic", "t"), ("source", "self")], body="x")
+        with open(nomint, "w", encoding="utf-8") as fh:
+            fh.write(scribe.stamp_for(self.g) + "\n" + scribe.serialize_pile([legacy]))
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(scribe.main(["verify", edited]), 0)
+            self.assertEqual(scribe.main(["verify", nomint]), scribe.EXIT_FINDINGS)
+
+
 class TestDuplicatesAudit(unittest.TestCase):
     """PHASE 3 — declare, never re-mint. Re-minting existing duplicates would change ids
     that relational tags already point at: breaking the pointer graph to fix a naming

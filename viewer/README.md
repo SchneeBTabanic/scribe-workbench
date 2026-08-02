@@ -57,7 +57,7 @@ stdout and `scribe push -` reads the edited view from **stdin**, so the whole ro
 derive, edit, push — never materialises a file. The canonical pile is the only thing on disk,
 and only `push` touches it.
 
-**Frozen scribe is never imported, only invoked.** `scribe.py` is at v1.3.2 (additive over
+**Frozen scribe is never imported, only invoked.** `scribe.py` is at v1.3.3 (additive over
 v1.0-frozen; see `PROVENANCE.md`). This shell calls it as a subprocess, so it *cannot* change
 scribe's behaviour — the freeze holds by construction rather than by promise. `viewer/` is an
 unfrozen sibling of a frozen core; the freeze covers `scribe.py` and its tests, not this
@@ -98,8 +98,8 @@ carries the verbs listed in `_SCRIBE_VERBS`.
 **Known gap, stated rather than left to be discovered.** That assertion checks the verbs in its
 tuple are **present**, not that the tuple is **complete** — so a verb added to scribe and not to
 the tuple passes silently. It has happened three times (`backlinks`; then `keys` and `stamp`;
-and now **`duplicates`**, added in scribe v1.3.0, which is missing from both `_FORWARDED_VERBS`
-and the test tuple). `/help` still shows it, because `/help` is derived from `scribe --help` and
+and now **`duplicates`** (v1.3.0) and **`verify`** (v1.3.3), both missing from
+`_FORWARDED_VERBS` and the test tuple). `/help` still shows it, because `/help` is derived from `scribe --help` and
 cannot be wrong — but typing `duplicates` in the shell will not forward it. Run it from the
 terminal. The real repair is a completeness assertion against `scribe --help`, which is part of
 what "not ready" above means.

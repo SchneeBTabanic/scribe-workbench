@@ -1,5 +1,72 @@
 # PROVENANCE — Scribe's Workbench
 
+## v1.3.3 — "the pile audits itself, and says what happened rather than grading it" (2026-08-02) — CURRENT
+
+A named new version, not a silent edit (§5.8). One new read-only verb, `scribe verify`.
+Nothing else changed; no format change, no flag, no behaviour change to any existing verb.
+
+**What it does.** The mint is `sha256(genesis + ordinal + ts + source + body)`, and every one
+of those five inputs is recoverable **from the file itself**. So the mint can be re-derived
+and compared to the stored one, which makes a pile **self-auditing at rest**. This is the
+intra-pile twin of `verify-export`: that verb answers *has the pile moved under a derived
+view*, using `content_fingerprint`; this one answers *is each block still the one its
+`@mint:` was issued for*. Same principle, one level in.
+
+**FACT-LANGUAGE, AND IT IS THE DESIGN, NOT THE WORDING.** v1.3.1 ruled the hand-edit a
+**legitimate sovereign act** — the second doorway, chosen per act, history-in-restic instead
+of history-in-the-pile (§3.1: the tool binds itself, not the human). A verb reporting that act
+as `MISMATCH`, `INVALID`, `MODIFIED` or at any severity would **recast a sanctioned choice as
+a defect**, and a sovereign who feels told off for using his own door stops using it. That is
+the identical trap the path-sovereignty witness already solved once — *`substituted` is a
+fact, never a fault* — and the tag-validator's `[HELD]` tier is the same move (Debian's
+`classification`: a witness formally separate from a fault). So the three states are
+`as captured`, `edited in place since capture`, `no mint — this check did not run`. **There is
+no severity anywhere in this verb and there must never be one**, which is held by
+`test_THE_LANGUAGE_GUARD_no_fault_words_anywhere_in_the_output` — a test guarding a *ruling*,
+because prose cannot hold that line across future edits.
+
+**THE DELETION SIGNATURE, DEMONSTRATED RATHER THAN GUESSED.** `ordinal` is a block's position
+at capture, frozen. Cut a block from the middle and every later block's ordinal stops matching
+its position, so a naive check reports the whole tail as changed — **a wave of alarm produced
+by one ordinary act; cutting a scene from a novel would light up everything after it.** So the
+audit *searches* for the shift: if a trailing run all re-derive cleanly at one constant ordinal
+offset, that is not N edits, it is K blocks removed (offset > 0) or inserted (offset < 0)
+earlier, and **the bodies are as captured — only their position moved.** The offset is proved,
+not assumed: the tail either verifies at it or it does not.
+
+**Exit codes carry §3.8's distinction.** `0` = every block's state was **determined**; an
+edited body is an *answer*, not a fault. `2` = the check **could not run** somewhere (a block
+with no `@mint:`), because a check that did not run must never be reported like one that passed.
+
+**Two things found by running it, fixed rather than filed:**
+* **The mint covers `ts` and `@source:`, not only the body** — found by a failing test. Removing
+  a `@source:` tag makes a block stop matching its mint, correctly, since `@source:` is part of
+  what was declared. The consequence is a wording duty: this verb must never claim to detect
+  *body* changes specifically, and it no longer does.
+* **Summarise the norm, enumerate the anomaly — and say which was done.** Found by running it on
+  the sovereign's real `RIPE-LEDGER.txt`: 43 legacy blocks beside 5 minted ones printed 86 lines
+  while calling them "the exception". An all-or-nothing rule was wrong; a *transitional* pile is
+  the common case today. Now majority-legacy is summarised with its count, a minority is named
+  individually, and the output states which happened.
+
+**Named limit (§3.8):** it reports *that* a block changed, never *what* changed — no earlier
+text is kept in the pile, by design, so only restic or git holds the before. A block cut from
+one position and pasted at another reads as `edited in place`, which is true in the only sense
+this verb can mean it.
+
+| File | Role | SHA-256 |
+|---|---|---|
+| `scribe.py` | frozen core | `46615bcdd6be73891f78bbbd131e0acfc8c4cef67695182157339cd0c4a6c16a` |
+| `test_scribe.py` | core tests (135) | `659385b1ac4d72fded2ba74117fbdc21f7c5dfa0b5326774fd0a1f36b0868173` |
+
+**Test attestation at v1.3.3:** 135 tests pass (132 carried forward + 3; `TestMintAudit` is 12
+tests covering the clean pile, an in-place edit, a timestamp edit, the deletion and insertion
+signatures, scattered edits *not* read as a shift, the `@source:` limit, the moved-block limit,
+bulk-legacy summarising, transitional piles, the individually-named anomaly, the exit-code
+split, and the language guard).
+
+---
+
 ## v1.3.2 — "a tag a human adds must land where a human reads" (2026-08-02) — CURRENT
 
 A named new version, not a silent edit (§5.8). Two defects, **both found by using the tool
