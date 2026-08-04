@@ -174,52 +174,85 @@ class TestHtmlCapture(unittest.TestCase):
 
 
 class TestIdStability(unittest.TestCase):
-    """The mint/handle split. A block is a NOMINAL object: two blocks reading `agreed`
-    are two sayings, not one saying stored twice (ruled 2026-08-01)."""
+    """Identity. A block is a NOMINAL object: two blocks reading `agreed` are two sayings,
+    not one saying stored twice (ruled 2026-08-01).
 
-    G = "g" * 64
+    REWRITTEN 2026-08-05. These tests used to pin `gen_mint`, which is retired. They pin the
+    same PROPERTIES against the thing that now carries identity — the handle — plus the one
+    property that is new and is the whole point: identity is not derived from the body."""
 
-    def test_mint_deterministic(self):
-        """Determinism survives the split — the property the old scheme was built for is
-        not the property that was wrong. Given the same declaring, the mint is the same."""
-        a = scribe.gen_mint(self.G, 0, "2026-01-01T00:00", "self", "same body")
-        b = scribe.gen_mint(self.G, 0, "2026-01-01T00:00", "self", "same body")
-        self.assertEqual(a, b)
+    def test_identity_does_NOT_depend_on_the_body(self):
+        """THE SIGNATURE TEST OF THE 2026-08-05 CHANGE, and it is the inverse of what the
+        old suite pinned. An identity answers *which thing is this*; an integrity check
+        answers *is this thing as it was*. Fusing them made every correction an identity
+        event, which is what made the pile feel like it was corralling its keeper. Same
+        declaring moment, different body, SAME identity — because correcting a word does not
+        make a block a different block."""
+        ts = "2026-01-01T00:00:00.123456"
+        self.assertEqual(scribe.gen_handle(ts), scribe.gen_handle(ts))
+        a, _ = scribe.make_block("the quik brown fox", [], "self", ts=ts)
+        b, _ = scribe.make_block("the quick brown fox", [], "self", ts=ts)
+        self.assertEqual(a.id, b.id, "a typo fix must not change which block this is")
 
-    def test_mint_is_never_truncated(self):
-        """restic/Sovereign Pool/Unison discipline: truncate for FILING, never for
-        IDENTITY. The mint is the whole digest."""
-        m = scribe.gen_mint(self.G, 0, "2026-01-01T00:00", "self", "body")
-        self.assertEqual(len(m), 64)
+    def test_identity_does_not_depend_on_the_pile_either(self):
+        """The mint folded the pile's genesis in, buying global uniqueness at 64 unreadable
+        characters per block forever. The handle's coordinates are THE PILE AND THE NAME —
+        `#2644` in this pile, `RIPE-LEDGER#2644` across piles, exactly as a directory
+        namespaces a filename. So `gen_handle` takes no genesis and there is nothing left
+        for a pile to diverge."""
+        import inspect
+        self.assertNotIn("genesis", inspect.signature(scribe.gen_handle).parameters)
 
-    def test_different_genesis_diverges(self):
-        """The `path` half. Two piles diverge at birth and can never re-converge, so
-        global uniqueness is a CONSEQUENCE of local history — no registry, no scan."""
-        a = scribe.gen_mint("a" * 64, 0, "2026-01-01T00:00", "self", "identical")
-        b = scribe.gen_mint("b" * 64, 0, "2026-01-01T00:00", "self", "identical")
-        self.assertNotEqual(a, b)
+    def test_handle_deterministic(self):
+        """Determinism survives the change — the property the old scheme was built for is
+        not the property that was wrong. No RNG in a records tool."""
+        self.assertEqual(scribe.gen_handle("2026-01-01T00:00:00.000001"),
+                         scribe.gen_handle("2026-01-01T00:00:00.000001"))
 
     def test_different_moment_diverges(self):
-        """The `act` half — the fact `timespec='minutes'` used to discard."""
-        a = scribe.gen_mint(self.G, 0, "2026-01-01T00:00:00.000001", "self", "agreed")
-        b = scribe.gen_mint(self.G, 0, "2026-01-01T00:00:00.000002", "self", "agreed")
+        """The `act` half — the fact `timespec='minutes'` used to discard, and now the only
+        fact identity rests on."""
+        a = scribe.gen_handle("2026-01-01T00:00:00.000001")
+        b = scribe.gen_handle("2026-01-01T00:00:00.000002")
         self.assertNotEqual(a, b)
+
+    def test_the_handle_is_re_derivable_from_the_timestamp_beside_it(self):
+        """WHY THE DECLARED MOMENT AND NOT RANDOMNESS. A handle taken from the digits of the
+        timestamp printed on the same line can be checked BY EYE with no stored digest: a
+        fabricated handle does not match its own timestamp. That is a free, weak check that
+        costs the header nothing, and it is what a random handle would have thrown away."""
+        ts = "2026-08-05T00:18:12.522644"
+        h = scribe.gen_handle(ts)
+        self.assertTrue(re.sub(r"\D", "", ts).endswith(h),
+                        f"handle {h} is not a tail of the moment it claims")
 
     def test_now_ts_carries_microseconds(self):
         """The encounter: two `agreed`s in the same minute collided because the tool had
-        thrown away what distinguished them."""
+        thrown away what distinguished them. Now load-bearing twice over — the microseconds
+        are what keep two same-second captures apart."""
         self.assertRegex(scribe.now_ts(), r"T\d\d:\d\d:\d\d\.\d{6}$")
 
     def test_handle_extends_on_collision(self):
-        """Knuth's rule at issue time (`Literate-Programming-Knuth.txt:827`): abbreviate
-        only as far as still identifies uniquely — and PERFORM the check. Extended and
-        visible, never renamed away (row 29)."""
-        m = scribe.gen_mint(self.G, 0, "2026-01-01T00:00", "self", "body")
-        first = scribe.gen_handle(m)
-        second = scribe.gen_handle(m, taken={first})
+        """Knuth's rule at issue time (`Literate-Programming-Knuth.txt:827`): abbreviate only
+        as far as still identifies uniquely — and PERFORM the check. Extended and visible,
+        never renamed away (row 29). The handle extends LEFTWARD now, taking in another digit
+        of the same moment, so the longer form is still a tail of its own timestamp."""
+        ts = "2026-01-01T00:00:00.123456"
+        first = scribe.gen_handle(ts)
+        second = scribe.gen_handle(ts, taken={first})
         self.assertEqual(len(first), scribe.HANDLE_MIN)
         self.assertNotEqual(first, second)
-        self.assertTrue(second.startswith(first))
+        self.assertTrue(second.endswith(first))
+
+    def test_collision_exhaustion_is_declared_not_duplicated(self):
+        """The end of the road, which only a pinned `--ts` can reach. When every tail of the
+        moment is taken the issuer must not hand back a duplicate — a silent collision is the
+        original 2026-08-01 defect. It appends a visible discriminator instead."""
+        ts = "2026-01-01T00:00:00.123456"
+        digits = re.sub(r"\D", "", ts)
+        taken = {digits[-n:] for n in range(scribe.HANDLE_MIN, len(digits))}
+        out = scribe.gen_handle(ts, taken=taken)
+        self.assertNotIn(out, taken)
 
     def test_handle_floor_matches_the_ruled_spec(self):
         """SPEC-VS-IMPLEMENTATION DRIFT, now guarded (§3.13). The ruled proposal's worked
@@ -258,9 +291,12 @@ class TestIdStability(unittest.TestCase):
         by the live path."""
         self.assertFalse(hasattr(scribe, "gen_id"),
                          "gen_id survived — the dead guard is back")
+        self.assertFalse(hasattr(scribe, "gen_mint"),
+                         "gen_mint survived its own retirement")
         # make_block must actually thread a taken-set into the handle issuer.
         src = pathlib.Path(scribe.__file__).read_text()
-        self.assertIn("gen_handle(mint, taken)", src)
+        self.assertIn("gen_handle(ts, taken)", src)
+
 
 
 PILE = (
@@ -1220,8 +1256,12 @@ class TestAmbiguityIsRefused(unittest.TestCase):
             scribe.add_tags(blocks, "z1", remove=[f"mint:{'f' * 64}"])
 
 
-class TestCaptureMintsNominally(unittest.TestCase):
-    """PHASE 1 — the encounter, run through the sanctioned front door."""
+class TestCaptureIssuesNominally(unittest.TestCase):
+    """PHASE 1 — the encounter, run through the sanctioned front door.
+
+    RENAMED 2026-08-05 from TestCaptureMintsNominally: there is no mint. What is pinned here
+    is unchanged in substance — two identical sayings must remain two — and the mechanism
+    that keeps them apart moved from CONSTRUCTION to a CHECK."""
 
     def setUp(self):
         self.dir = tempfile.mkdtemp()
@@ -1229,38 +1269,71 @@ class TestCaptureMintsNominally(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.dir, ignore_errors=True)
 
-    def _capture(self, pile, body, ts=None):
+    def _capture(self, pile, body, ts=None, extra=()):
         cmd = [sys.executable, "scribe.py", "capture", "--source", "claude",
-               "--tag", "topic:x", "--append", pile]
+               "--tag", "topic:x", "--append", pile, *extra]
         if ts:
             cmd += ["--ts", ts]
         return subprocess.run(cmd, input=body, capture_output=True, text=True)
 
     def test_same_body_same_minute_same_source_now_distinct(self):
         """THE ENCOUNTER. Before: two identical `@@ #a8eb` headers, in one pile, silently.
-        The ts is pinned to the same MINUTE for both, so nothing but the mint separates
-        them — and they must still be two sayings."""
+        The ts is pinned to the same MINUTE for both, so the declaring moment cannot separate
+        them either — and they must still be two sayings."""
         pile = os.path.join(self.dir, "same.txt")
         self._capture(pile, "agreed\n", ts="2026-08-01T10:00")
         self._capture(pile, "agreed\n", ts="2026-08-01T10:00")
         blocks = [b for b in scribe.parse_pile(pathlib.Path(pile).read_text()) if b.id]
         self.assertEqual(len(blocks), 2)
-        mints = [dict(b.tags)[scribe.MINT_KEY] for b in blocks]
-        self.assertEqual(len(set(mints)), 2, "identical mints — still one saying")
         self.assertEqual(len(set(b.id for b in blocks)), 2, "handles collided")
         self.assertEqual(scribe.duplicate_handles(blocks), {})
 
-    def test_two_piles_do_not_collide(self):
-        """The cross-pile half of the original question, settled by genesis rather than
-        by any registry, scan or manifest."""
+    def test_THE_OBJECTION_a_pinned_ts_collapses_the_one_field_identity_rests_on(self):
+        """THE OBJECTION THE 2026-08-05 CHANGE REVIVES, ANSWERED RATHER THAN DROPPED.
+
+        The old mint kept two identical backdated sayings apart BY CONSTRUCTION: `ordinal` is
+        a block's position in an append-only pile, so the second is the (n+1)th however
+        identical it is — gForth's `HERE`, which only moves forward. That was a real argument
+        and this suite used to pin it (`test_full_precision_ts_ALONE_is_not_sufficient`).
+
+        Identity no longer contains the position, so THE CONSTRUCTION IS GONE and only the
+        CHECK remains. That is not a weakening dressed up: it is Knuth's rule stated exactly
+        — abbreviate only as far as still identifies uniquely, and PERFORM the check — and
+        the whole 2026-08-01 defect was a truncation shipped WITHOUT the check.
+
+        What it does mean is that `taken` is now the only thing standing between the pile and
+        a repeat of that defect, so it is load-bearing in a way it was not before. Pinned
+        here, through the real CLI, with the timestamp pinned to the microsecond so nothing
+        else can be doing the work."""
+        pile = os.path.join(self.dir, "pinned.txt")
+        ts = "2026-08-01T10:00:00.000000"
+        for _ in range(3):
+            self._capture(pile, "agreed\n", ts=ts)
+        blocks = [b for b in scribe.parse_pile(pathlib.Path(pile).read_text()) if b.id]
+        self.assertEqual(len(blocks), 3)
+        self.assertEqual(len(set(b.id for b in blocks)), 3,
+                         "the check is the ONLY guard now, and it did not hold")
+        self.assertEqual(scribe.duplicate_handles(blocks), {})
+
+    def test_two_piles_may_reuse_a_handle_and_that_is_the_model(self):
+        """The cross-pile half, and the answer CHANGED on 2026-08-05. The mint bought global
+        uniqueness by folding each pile's genesis into every identity — 64 unreadable
+        characters per block, forever, to avoid ever writing down which pile you meant.
+
+        Now the PILE IS THE NAMESPACE, as a directory is for a filename, and `backlinks`
+        already speaks `pile.txt#id` for exactly this reason. So two piles reusing a handle
+        is not a collision to be prevented; it is the naming model working. Pinned as a
+        PROPERTY rather than left as an accident, because the next reader will otherwise
+        read it as the bug that was fixed on 2026-08-01 — and it is not that bug, which was
+        two identical handles INSIDE one pile."""
         a, b = (os.path.join(self.dir, n) for n in ("a.txt", "b.txt"))
-        self._capture(a, "the same thought\n", ts="2026-08-01T10:00")
-        self._capture(b, "the same thought\n", ts="2026-08-01T10:00")
-        ma = dict([x for x in scribe.parse_pile(pathlib.Path(a).read_text())
-                   if x.id][0].tags)[scribe.MINT_KEY]
-        mb = dict([x for x in scribe.parse_pile(pathlib.Path(b).read_text())
-                   if x.id][0].tags)[scribe.MINT_KEY]
-        self.assertNotEqual(ma, mb)
+        ts = "2026-08-01T10:00:00.000000"
+        self._capture(a, "the same thought\n", ts=ts)
+        self._capture(b, "a different thought\n", ts=ts)
+        ida = [x for x in scribe.parse_pile(pathlib.Path(a).read_text()) if x.id][0].id
+        idb = [x for x in scribe.parse_pile(pathlib.Path(b).read_text()) if x.id][0].id
+        self.assertEqual(ida, idb, "same moment, different piles — the handle is the same "
+                                   "and the pile is what tells them apart")
 
     def test_new_pile_is_born_with_a_genesis(self):
         pile = os.path.join(self.dir, "born.txt")
@@ -1271,70 +1344,66 @@ class TestCaptureMintsNominally(unittest.TestCase):
         self.assertEqual(len(genesis), 64)
 
     def test_legacy_pile_is_NAMED_not_silently_upgraded(self):
-        """A pile from before today has no genesis. It keeps working, the weaker
-        guarantee is DISCLOSED, and nothing is rewritten behind the human (§3.8)."""
+        """A pile from before 2026-08-01 has no genesis. It keeps working, the difference is
+        DISCLOSED, and nothing is rewritten behind the human (§3.8). What the disclosure SAYS
+        changed on 2026-08-05 — the genesis no longer feeds identity, so the note now reports
+        a fact about the pile's history rather than a weaker guarantee."""
         pile = os.path.join(self.dir, "legacy.txt")
         pathlib.Path(pile).write_text(
             "@@ #old1 2026-07-01T09:00 @topic:x @source:s\nan older saying\n")
         r = self._capture(pile, "a new one\n")
         self.assertIn("no @genesis:", r.stderr)
-        self.assertIn("@mint:", pathlib.Path(pile).read_text())
         self.assertIn("#old1", pathlib.Path(pile).read_text())
 
     def test_handle_extension_is_announced(self):
         """Row 29: declare the collision, do not rename it away."""
-        m = scribe.gen_mint("g" * 64, 0, "2026-01-01T00:00", "s", "b")
-        short = scribe.gen_handle(m)
-        self.assertEqual(scribe.gen_handle(m, taken={short}), m[:5])
+        pile = os.path.join(self.dir, "ext.txt")
+        ts = "2026-08-01T10:00:00.000000"
+        self._capture(pile, "one\n", ts=ts)
+        r = self._capture(pile, "two\n", ts=ts)
+        self.assertIn("handle extended", r.stderr)
 
-    def test_full_precision_ts_ALONE_is_not_sufficient(self):
-        """THE OBJECTION, AND THE EVIDENCE THAT SETTLES IT.
-
-        Raised 2026-08-01 (§4.6 poverty): 'the minimal correct change may be bump one
-        existing field's precision and add no new field at all' — the timestamp is already
-        non-content, already in the header, already human-readable.
-
-        It does not hold, and this test is why. `capture --ts` is a supported, shipped flag
-        (backdating, importing a batch), and any pinned ts collapses the one field the
-        proposal rests on. Two identical sayings backdated to the same moment are
-        indistinguishable by timestamp BY CONSTRUCTION. What cannot collapse is the
-        position: a pile is append-only, so the second saying is the (n+1)th however
-        identical it is. That is gForth's `HERE`, and it is why `ordinal` is in the mint.
-
-        Poverty is right to ask; the answer is that the cheaper thing does not work."""
-        g = "g" * 64
-        ts = "2026-08-01T10:00:00.000000"      # full precision, and still pinned
-        same_everything_but_position = [
-            scribe.gen_mint(g, n, ts, "claude", "agreed") for n in (0, 1)]
-        self.assertEqual(len(set(same_everything_but_position)), 2)
-        # and without the ordinal the two would be identical — the bug, one layer down
-        self.assertEqual(
-            scribe.gen_mint(g, 0, ts, "claude", "agreed"),
-            scribe.gen_mint(g, 0, ts, "claude", "agreed"))
-
-    def test_mint_trails_the_vocabulary_for_readability(self):
-        """The poverty objection answered structurally: a human reading the pile in an
-        editor meets the tags they came for first; the hash trails off the line end."""
+    def test_an_ordinary_header_carries_NO_DIGEST_AT_ALL(self):
+        """§4.3, and it is the change a human actually SEES. Every header used to end in 64
+        hex; sealing is opt-in, so an ordinary block's header is now entirely readable
+        vocabulary. The poverty objection raised on 2026-08-01 — 'a pile's whole virtue is
+        being readable in an editor with the tool off, and 64 hex per block is identity noise
+        in front of the human's eyes' — was answered then by MOVING the hash to the end of
+        the line. It is answered now by not writing one."""
         block, _ = scribe.make_block("body", [("topic", "x"), ("source", "s")], "s",
-                                     ts="2026-01-01T00:00", genesis="g" * 64)
-        self.assertEqual(block.tags[-1][0], scribe.MINT_KEY)
+                                     ts="2026-01-01T00:00:00.000000")
         line = scribe.serialize_block(block).splitlines()[0]
-        self.assertLess(line.index("@topic:"), line.index("@mint:"))
+        self.assertNotIn("@mint:", line)
+        self.assertNotIn("@sealed:", line)
+        self.assertNotRegex(line, r"[0-9a-f]{64}")
 
-    def test_mint_tag_parses_in_the_existing_grammar(self):
-        """@mint: is an ordinary tag in the ordinary tag run — NOT new syntax. The brief's
-        draft header placed it between the id and the timestamp, which does not parse:
-        HEADER_RE takes the first bare token after the id AS the timestamp."""
-        good = f"@@ #a1 2026-08-01T10:00:00.000001 @mint:{'a' * 64} @topic:x @source:s"
-        self.assertIsNotNone(scribe.HEADER_RE.match(good))
-        bad = f"@@ #a1 @mint:{'a' * 64} 2026-08-01T10:00:00.000001 @topic:x @source:s"
-        self.assertIsNone(scribe.HEADER_RE.match(bad))
+    def test_a_seal_is_opt_in_and_trails_the_vocabulary(self):
+        """When a digest IS asked for it keeps the placement ruling the mint held: the eye
+        meets the tags it came for, and the 64 hex trail off the line end."""
+        block, _ = scribe.make_block("body", [("topic", "x"), ("source", "s")], "s",
+                                     ts="2026-01-01T00:00:00.000000", seal=True)
+        self.assertEqual(block.tags[-1][0], scribe.SEAL_KEY)
+        line = scribe.serialize_block(block).splitlines()[0]
+        self.assertLess(line.index("@topic:"), line.index("@sealed:"))
 
 
-class TestMintAudit(unittest.TestCase):
-    """`scribe verify` — the pile auditing itself at rest. The mint's five inputs are all
-    recoverable from the file, so it can be re-derived and compared; this is the intra-pile
-    twin of verify-export's content_fingerprint."""
+
+class TestSealAudit(unittest.TestCase):
+    """`scribe verify` — the pile auditing itself at rest, OPT-IN since 2026-08-05.
+
+    REWRITTEN from TestMintAudit. The old class pinned an audit that covered every block by
+    re-deriving its `@mint:`. That check was retired for the reason gathered before the
+    change and not after: across all four of the sovereign's real piles — 76 blocks — it had
+    reported `edited in place` ZERO times, and 45 of those 76 carried no mint at all. What it
+    cost was paid every day; what it caught was nothing.
+
+    Gone with it: the DELETION-SIGNATURE search. Because the old identity contained a block's
+    ordinal, removing one block from the middle made every later block re-derive wrong, so
+    the audit had to look for a trailing run verifying at one constant offset and report
+    "K blocks removed" instead of a wave of false alarm. That machinery was correct and it
+    existed ONLY to defend the choice to put position inside identity. An identity that is
+    issued and never recomputed cannot drift when its neighbours move. Most of what these
+    tests stopped needing was not the feature — it was the scaffolding the feature required."""
 
     def setUp(self):
         self.dir = tempfile.mkdtemp()
@@ -1343,137 +1412,148 @@ class TestMintAudit(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.dir, ignore_errors=True)
 
-    def _pile(self, bodies):
+    def _pile(self, bodies, seal=True):
         blocks = []
         for i, body in enumerate(bodies):
             b, _ = scribe.make_block(body, [("topic", "t"), ("source", "self")], "self",
-                                     ts=f"2026-08-02T10:00:0{i}.000000",
-                                     genesis=self.g, taken={x.id for x in blocks}, ordinal=i)
+                                     ts=f"2026-08-02T10:00:0{i}.00000{i}",
+                                     taken={x.id for x in blocks}, seal=seal)
             blocks.append(b)
         return blocks
 
-    def test_untouched_pile_is_all_as_captured(self):
-        rep = scribe.audit_mints(self._pile(["one", "two", "three"]), self.g)
-        self.assertEqual(rep["states"], [scribe.AS_CAPTURED] * 3)
-        self.assertIsNone(rep["shift"])
+    def test_untouched_sealed_pile_is_all_as_sealed(self):
+        rep = scribe.audit_seals(self._pile(["one", "two", "three"]))
+        self.assertEqual(rep["states"], [scribe.AS_SEALED] * 3)
+        self.assertEqual(rep["unsealed"], 0)
 
-    def test_a_body_edited_in_place_is_named_and_only_that_one(self):
+    def test_a_sealed_body_edited_in_place_is_named_and_only_that_one(self):
         blocks = self._pile(["one", "two", "three"])
         blocks[1].body = "two, with the final sentence rewritten"
-        rep = scribe.audit_mints(blocks, self.g)
+        rep = scribe.audit_seals(blocks)
         self.assertEqual(rep["states"],
-                         [scribe.AS_CAPTURED, scribe.EDITED_IN_PLACE, scribe.AS_CAPTURED])
+                         [scribe.AS_SEALED, scribe.CHANGED_SINCE_SEAL, scribe.AS_SEALED])
 
     def test_editing_the_TIMESTAMP_is_caught_too(self):
-        """ts is a mint input, so an edit cannot be covered by adjusting the stamp."""
-        blocks = self._pile(["one", "two"])
+        """A seal covers the declaring moment, so backdating a sealed block says so."""
+        blocks = self._pile(["one"])
         blocks[0].ts = "2020-01-01T00:00:00.000000"
-        self.assertEqual(scribe.audit_mints(blocks, self.g)["states"][0],
-                         scribe.EDITED_IN_PLACE)
+        self.assertEqual(scribe.audit_seals(blocks)["states"], [scribe.CHANGED_SINCE_SEAL])
 
-    def test_a_DELETED_middle_block_is_a_position_shift_not_a_wave_of_edits(self):
-        """THE CASE THIS DESIGN EXISTS FOR. Cutting a scene is ordinary. A naive check
-        reports every later block as changed — alarm produced by one legitimate act. The
-        shift is DEMONSTRATED: the tail re-derives exactly at a constant offset."""
+    def test_ONLY_source_is_sealed_of_the_tags(self):
+        """DECLARED CONSEQUENCE (§3.8), carried over from the mint unchanged because the
+        reasoning was right: re-attributing a saying is a significant act and should be
+        visible, so `@source:` is inside the seal — but the rest of the vocabulary is how a
+        pile is re-interrogated as thinking moves, and sealing it would make ordinary
+        re-filing look like tampering."""
+        blocks = self._pile(["one"])
+        blocks[0].tags = [("topic", "COMPLETELY-DIFFERENT"), ("source", "self")] + \
+                         [t for t in blocks[0].tags if t[0] == scribe.SEAL_KEY]
+        self.assertEqual(scribe.audit_seals(blocks)["states"], [scribe.AS_SEALED],
+                         "re-filing must not read as tampering")
+        blocks[0].tags = [("topic", "t"), ("source", "someone-else")] + \
+                         [t for t in blocks[0].tags if t[0] == scribe.SEAL_KEY]
+        self.assertEqual(scribe.audit_seals(blocks)["states"], [scribe.CHANGED_SINCE_SEAL],
+                         "re-attribution must not be silent")
+
+    def test_a_DELETED_middle_block_disturbs_NOTHING(self):
+        """THE SCAFFOLDING THAT IS NO LONGER NEEDED, pinned as a property. Cutting a block
+        out of the middle of a pile used to make every later block re-derive wrong, and the
+        audit needed a whole offset-search to report that truthfully. Identity and seals now
+        contain no position, so removing a block is invisible to every other block — which
+        is what an append-only store of independent sayings should have meant all along."""
         blocks = self._pile(["one", "two", "three", "four"])
         del blocks[1]
-        rep = scribe.audit_mints(blocks, self.g)
-        self.assertIsNotNone(rep["shift"], "a cut block must not read as edited bodies")
-        self.assertEqual(rep["shift"]["offset"], 1)
-        self.assertEqual(rep["shift"]["count"], 1)
-        self.assertTrue(rep["shift"]["removed"])
-        self.assertEqual(rep["states"], [scribe.AS_CAPTURED] * 3,
-                         "bodies are as captured; only position moved")
+        self.assertEqual(scribe.audit_seals(blocks)["states"], [scribe.AS_SEALED] * 3)
 
-    def test_a_HAND_INSERTED_block_shifts_the_others_the_other_way(self):
-        """The realistic insertion: a block typed straight into the middle of the file. It
-        carries no mint of its own, and it pushes every later block one position past the
-        ordinal it was minted at — so the shift offset is NEGATIVE. Their bodies are
-        untouched and must be reported so."""
-        blocks = self._pile(["one", "two", "three"])
-        typed = scribe.Block(id="hand", ts="2026-08-02T09:30:00.000000",
-                             tags=[("topic", "t"), ("source", "self")],
-                             body="typed straight into the file")
-        blocks.insert(1, typed)
-        rep = scribe.audit_mints(blocks, self.g)
-        self.assertIsNotNone(rep["shift"], "an inserted block must not read as edited bodies")
-        self.assertEqual(rep["shift"]["offset"], -1)
-        self.assertFalse(rep["shift"]["removed"])
-        self.assertEqual(rep["states"][1], scribe.NO_MINT, "the typed block is unverifiable")
-        self.assertEqual([rep["states"][i] for i in (0, 2, 3)], [scribe.AS_CAPTURED] * 3)
-
-    def test_NAMED_LIMIT_a_block_moved_in_from_elsewhere_reads_as_edited(self):
-        """A block cut from one position and pasted at another carries a mint issued for
-        the position it came FROM, so it does not match where it now sits and no single
-        offset explains it alongside its neighbours. It is reported 'edited in place',
-        which is true in the only sense this verb can mean it: the block is not the one
-        that mint was issued for. Recorded so the absence of finer detection is deliberate
-        (§3.8) — recovering a move would need the prior file, which the pile does not keep."""
-        blocks = self._pile(["one", "two", "three"])
-        moved = blocks.pop(2)
-        blocks.insert(0, moved)
-        rep = scribe.audit_mints(blocks, self.g)
-        self.assertIn(scribe.EDITED_IN_PLACE, rep["states"])
-
-    def test_scattered_edits_are_NOT_read_as_a_shift(self):
-        """A run must reach the END to be a shift; edits in the middle stay edits."""
-        blocks = self._pile(["one", "two", "three", "four"])
-        blocks[1].body = "changed"
-        rep = scribe.audit_mints(blocks, self.g)
-        self.assertIsNone(rep["shift"])
-        self.assertEqual(rep["states"].count(scribe.EDITED_IN_PLACE), 1)
-
-    def test_a_block_with_no_mint_says_THE_CHECK_DID_NOT_RUN(self):
-        """§3.8: a check that did not run must never look like one that passed."""
+    def test_a_block_moved_in_from_elsewhere_still_verifies(self):
+        """NAMED LIMIT, and its sign flipped. A mint folded in the pile's genesis, so a block
+        carried in from another pile read as edited — which was defensible but meant a seal
+        was partly a statement about WHERE a block sat. A seal is now a statement about the
+        BLOCK, so it travels with it. That is the property `@formed:` has in the gForth
+        build, reached here from the other direction."""
         blocks = self._pile(["one"])
-        legacy = scribe.Block(id="old1", ts="2026-01-01T00:00",
-                              tags=[("topic", "t"), ("source", "self")],
-                              body="captured before the split")
-        rep = scribe.audit_mints(blocks + [legacy], self.g)
-        self.assertEqual(rep["states"][1], scribe.NO_MINT)
-        self.assertEqual(rep["unminted"], 1)
-        self.assertIn("did not run", scribe.NO_MINT)
+        self.assertEqual(scribe.audit_seals(blocks, genesis="z" * 64)["states"],
+                         [scribe.AS_SEALED])
 
-    def test_NAMED_LIMIT_the_mint_covers_ts_and_source_not_only_the_body(self):
-        """Found by a failing test, not by reasoning. The mint is over genesis+ordinal+ts+
-        source+body, so REMOVING OR CHANGING @source: also makes a block stop matching its
-        mint — correctly, since @source: is part of what was declared. The consequence for
-        wording: this verb must never claim it detects *body* changes specifically. It
-        detects that the block is not the one the mint was issued for."""
-        blocks = self._pile(["one", "two"])
-        blocks[0].tags = [(k, v) for k, v in blocks[0].tags if k != "source"]
-        self.assertEqual(scribe.audit_mints(blocks, self.g)["states"][0],
-                         scribe.EDITED_IN_PLACE)
+    def test_an_unsealed_block_says_THE_CHECK_DID_NOT_RUN(self):
+        """§3.8. A check that did not run must never be reported like one that passed —
+        and under opt-in sealing that is the ORDINARY condition, so it is stated every time
+        rather than left to the silence."""
+        import contextlib, io
+        path = os.path.join(self.dir, "u.txt")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(scribe.serialize_pile(self._pile(["one", "two"], seal=False)))
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = scribe.main(["verify", path])
+        out = buf.getvalue()
+        self.assertIn("2 not sealed", out)
+        self.assertIn("CHECK DID", out)
+        self.assertEqual(rc, 0, "a question nobody asked is not an unanswered question")
 
-    def test_ONLY_source_is_sealed_into_the_mint(self):
-        """THE DECLARED SURFACE, pinned so it is a statement rather than a discovery.
+    def test_exit_2_ONLY_when_a_seal_was_broken(self):
+        """The exit code carries one fact and no others. Neither an unsealed block nor a
+        legacy `@mint:` sets it — both are permanent conditions of ordinary piles, and an
+        alarm that always fires defeats disclosure while satisfying it (§3.7 as amended),
+        teaching the reader to stop reading exit codes."""
+        import contextlib, io
+        clean = os.path.join(self.dir, "clean.txt")
+        broken = os.path.join(self.dir, "broken.txt")
+        legacy = os.path.join(self.dir, "legacy.txt")
+        with open(clean, "w", encoding="utf-8") as fh:
+            fh.write(scribe.serialize_pile(self._pile(["one"])))
+        blocks = self._pile(["one"])
+        blocks[0].body = "changed"
+        with open(broken, "w", encoding="utf-8") as fh:
+            fh.write(scribe.serialize_pile(blocks))
+        with open(legacy, "w", encoding="utf-8") as fh:
+            fh.write("@@ #old1 2026-07-01T09:00 @topic:t @source:s @mint:" + "f" * 64
+                     + "\nan older saying\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(scribe.main(["verify", clean]), 0)
+            self.assertEqual(scribe.main(["verify", broken]), scribe.EXIT_FINDINGS)
+            self.assertEqual(scribe.main(["verify", legacy]), 0)
 
-        The mint is over genesis+ordinal+ts+source+body, so `@source:` — alone among tags —
-        is FROZEN INTO THE IDENTITY: a saying cannot be silently re-attributed, and editing
-        it honestly reports `edited in place`. Every OTHER tag is freely revisable and does
-        not affect verification, which means the tag layer is only PARTLY revisable. That
-        asymmetry is a real property of the format and must never be something a keeper
-        finds out by accident (§3.8).
+    def test_a_LEGACY_mint_is_reported_as_UNCHECKABLE_not_as_absent(self):
+        """The retired scheme stays legible (§3.16 live-vs-frozen). A mint cannot be
+        re-derived from what the file alone says — it needed the pile's genesis and the
+        block's frozen ordinal — so this verb says exactly that, rather than reporting an
+        absence of evidence as evidence."""
+        import contextlib, io
+        path = os.path.join(self.dir, "legacy.txt")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("@@ #old1 2026-07-01T09:00 @topic:t @source:s @mint:" + "f" * 64
+                     + "\nan older saying\n")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            scribe.main(["verify", path])
+        out = buf.getvalue()
+        self.assertIn("1 legacy", out)
+        self.assertIn("cannot be re-derived", out)
+        self.assertIn("RETIRED", out)
+        # And the state itself carries the same fact, for anything reading the audit
+        # programmatically rather than reading the report.
+        rep = scribe.audit_seals(scribe.parse_pile(pathlib.Path(path).read_text()))
+        self.assertEqual(rep["states"], [scribe.LEGACY_MINT])
 
-        Also the standing guard on the seal's SCOPE: if anyone ever widens the mint to cover
-        more tags, this test fails and the widening has to be declared rather than shipped."""
-        blocks = self._pile(["a body"])
-        b = blocks[0]
-        # free: adding, changing and removing ordinary vocabulary changes nothing
-        for add in (("topic", "zfs"), ("act", "protect-against-bit-rot"),
-                    ("path", "toward-integrity"), ("aspect", "manifested")):
-            b.tags = scribe._insert_before_mint(b.tags, add)
-            self.assertEqual(scribe.audit_mints(blocks, self.g)["states"][0],
-                             scribe.AS_CAPTURED,
-                             f"@{add[0]}: must NOT be sealed — the vocabulary stays revisable")
-        b.tags = [(k, v) for k, v in b.tags if k != "topic"]
-        self.assertEqual(scribe.audit_mints(blocks, self.g)["states"][0], scribe.AS_CAPTURED)
-        # sealed: re-attributing the saying is visible
-        b.tags = [(("source", "someone-else") if k == "source" else (k, v))
-                  for k, v in b.tags]
-        self.assertEqual(scribe.audit_mints(blocks, self.g)["states"][0],
-                         scribe.EDITED_IN_PLACE,
-                         "@source: IS sealed — a saying must not be silently re-attributed")
+    def test_legacy_blocks_are_summarised_with_the_grep_that_finds_them(self):
+        """§4.6, and it is a correction made once the output existed rather than reasoned in
+        advance. The first version NAMED every legacy block: nine of them cost eighteen lines
+        that said nothing the count had not, and there is no per-block act to take from
+        reading them. Summarise the norm, and hand over the means of finding them."""
+        import contextlib, io
+        path = os.path.join(self.dir, "many.txt")
+        with open(path, "w", encoding="utf-8") as fh:
+            for i in range(6):
+                fh.write(f"@@ #old{i} 2026-07-01T09:0{i} @topic:t @source:s @mint:"
+                         + "f" * 64 + f"\nsaying {i}\n\n")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            scribe.main(["verify", path])
+        out = buf.getvalue()
+        self.assertIn("NOT LISTED", out)
+        self.assertIn("grep", out)
+        self.assertNotIn("#old3", out)
 
     def test_THE_LANGUAGE_GUARD_no_fault_words_anywhere_in_the_output(self):
         """THE LOAD-BEARING TEST, and it guards a RULING rather than a behaviour.
@@ -1488,11 +1568,11 @@ class TestMintAudit(unittest.TestCase):
         path = os.path.join(self.dir, "p.txt")
         blocks = self._pile(["one", "two", "three"])
         blocks[1].body = "edited by hand"
-        legacy = scribe.Block(id="old1", ts="2026-01-01T00:00",
-                              tags=[("topic", "t"), ("source", "self")], body="no mint here")
+        plain = scribe.Block(id="old1", ts="2026-01-01T00:00",
+                             tags=[("topic", "t"), ("source", "self")], body="no seal here")
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(scribe.stamp_for(self.g) + "\n"
-                     + scribe.serialize_pile(blocks + [legacy]))
+                     + scribe.serialize_pile(blocks + [plain]))
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             scribe.main(["verify", path])
@@ -1500,78 +1580,283 @@ class TestMintAudit(unittest.TestCase):
         for word in ("mismatch", "invalid", "corrupt", "tamper", "unverified", "error",
                      "warning", "severity", "violation", "illegal", "suspicious", "modified"):
             self.assertNotIn(word, out, f"fault-language {word!r} reached the output")
-        self.assertIn("as captured", out)
-        self.assertIn("edited in place since capture", out)
+        self.assertIn("as sealed", out)
 
-    def test_bulk_legacy_is_summarised_and_still_says_it_did_not_run(self):
-        """Enumerate the anomaly, summarise the norm, declare which was done. The rule is
-        MAJORITY, not all-or-nothing: found by running it on the sovereign's real ledger,
-        where 43 legacy blocks sit beside 5 minted ones and an all-or-nothing rule printed
-        86 lines while calling them 'the exception'. It must still not read as a pass."""
-        import contextlib, io
-        path = os.path.join(self.dir, "legacy.txt")
-        with open(path, "w", encoding="utf-8") as fh:
-            for i in range(8):
-                fh.write(f"@@ #old{i} 2026-01-0{i+1}T00:00 @topic:t @source:self\nbody {i}\n\n")
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            rc = scribe.main(["verify", path])
-        out = buf.getvalue()
-        self.assertEqual(rc, scribe.EXIT_FINDINGS, "a check that did not run is not a pass")
-        self.assertIn("CHECK DID NOT RUN", out)
-        self.assertNotIn("#old3", out, "the norm is summarised, not enumerated")
-        self.assertIn("8", out, "the count is still stated, so nothing is hidden")
 
-    def test_a_TRANSITIONAL_pile_mostly_legacy_is_still_summarised(self):
-        """The real shape of the sovereign's ledger today: a few minted blocks appended to
-        a long legacy pile. Majority-legacy summarises even though it is not all-legacy."""
-        import contextlib, io
-        path = os.path.join(self.dir, "trans.txt")
-        blocks = self._pile(["new one", "new two"])
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write(scribe.stamp_for(self.g) + "\n")
-            for i in range(9):
-                fh.write(f"@@ #old{i} 2026-01-0{i+1}T00:00 @topic:t @source:self\nbody {i}\n\n")
-            fh.write(scribe.serialize_pile(blocks))
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            scribe.main(["verify", path])
-        out = buf.getvalue()
-        self.assertNotIn("#old4", out, "majority-legacy summarises, all-or-nothing was wrong")
-        self.assertIn("9 of 11", out, "and says exactly how many did not run")
 
-    def test_an_unminted_block_in_a_MINTED_pile_is_named_individually(self):
-        """The inverse, and the interesting case: a block typed straight into a pile that
-        otherwise carries mints is the exception, so it is named."""
-        import contextlib, io
-        path = os.path.join(self.dir, "mixed.txt")
-        blocks = self._pile(["one", "two"])
-        typed = scribe.Block(id="hand", ts="2026-08-02T11:00:00.000000",
-                             tags=[("topic", "t"), ("source", "self")], body="typed in")
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write(scribe.stamp_for(self.g) + "\n" + scribe.serialize_pile(blocks + [typed]))
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            scribe.main(["verify", path])
-        self.assertIn("#hand", buf.getvalue())
+class TestAmendTheThirdDoorway(unittest.TestCase):
+    """`scribe amend` — correction as an act distinct from revision, 2026-08-05.
 
-    def test_exit_0_when_determined_and_2_only_when_the_check_could_not_run(self):
-        """An edited body is an ANSWER, so exit 0. A missing mint is a check that did not
-        happen, so exit 2 — the two must not be signalled the same way."""
+    Before this there were two doorways and the missing one was the common case: "I wrote
+    that five minutes ago and a word is wrong." That is not a revision — nothing moved — so
+    the pile should not grow and nothing should be reported, because NOTHING HAPPENED. It
+    could not exist while identity contained the body: every correction would have been an
+    identity event, so the tool would have had to either change the block's identity
+    (breaking every pointer to it) or report it forever as edited.
+
+    So this is not a feature added on top of the identity change. It IS that change, seen
+    from the user's side."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.pile = os.path.join(self.dir, "p.txt")
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def _cap(self, body, extra=()):
+        return subprocess.run(
+            [sys.executable, "scribe.py", "capture", "--source", "schnee",
+             "--tag", "topic:t", "--append", self.pile, *extra],
+            input=body, capture_output=True, text=True)
+
+    def _amend(self, handle, body):
+        return subprocess.run(
+            [sys.executable, "scribe.py", "amend", handle, self.pile],
+            input=body, capture_output=True, text=True)
+
+    def _blocks(self):
+        return [b for b in scribe.parse_pile(pathlib.Path(self.pile).read_text()) if b.id]
+
+    def test_a_typo_changes_the_body_and_NOTHING_ELSE(self):
+        """Identity unchanged, pile the same length, no tag added, no trace. A typo is not
+        an event — the gForth build's ruling (`amend-last` records nothing), adopted here."""
+        self._cap("the quik brown fox\n")
+        h = self._blocks()[0].id
+        before_tags = list(self._blocks()[0].tags)
+        r = self._amend(h, "the quick brown fox\n")
+        self.assertEqual(r.returncode, 0)
+        after = self._blocks()
+        self.assertEqual(len(after), 1, "the pile grew")
+        self.assertEqual(after[0].id, h, "identity moved under a correction")
+        self.assertEqual(after[0].body, "the quick brown fox")
+        self.assertEqual(after[0].tags, before_tags, "a correction left a trace")
+
+    def test_it_REFUSES_when_something_points_at_the_block(self):
+        """THE GUARD, AND IT IS A REFUSAL NOT A WARNING. Someone wrote `@ref:#x` ABOUT the
+        wording that is there now; silently changing that wording rewrites their citation.
+        That is exactly what `push` exists to protect, so the refusal names it and says so.
+        If something points at it, it is no longer only yours to correct."""
+        self._cap("the target\n")
+        target = self._blocks()[0].id
+        self._cap("the pointer\n", extra=["--tag", f"ref:#{target}"])
+        before = pathlib.Path(self.pile).read_text()
+        r = self._amend(target, "rewritten under a citation\n")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("REFUSED", r.stderr)
+        self.assertIn("push", r.stderr, "the refusal must name the doorway that fits")
+        self.assertEqual(pathlib.Path(self.pile).read_text(), before,
+                         "a refusal that wrote anyway")
+
+    def test_it_REFUSES_a_sealed_block_which_is_what_makes_seal_mean_anything(self):
+        """A seal is a declaration that this body is to be held as it stands. Amending under
+        one would either break it silently or reissue it in the keeper's name — the first is
+        damage, the second is a tool forging a claim. Neither is the tool's to do."""
+        self._cap("held as it stands\n", extra=["--seal"])
+        h = self._blocks()[0].id
+        before = pathlib.Path(self.pile).read_text()
+        r = self._amend(h, "quietly changed\n")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("@sealed:", r.stderr)
+        self.assertEqual(pathlib.Path(self.pile).read_text(), before)
+
+    def test_it_NAMES_the_piles_it_checked_and_offers_how_to_widen(self):
+        """§3.8 — a check must say what it did not check, and this one goes one better: it
+        names the piles it DID check and hands over the flag that widens it. Ruled 2026-08-05
+        after the first build only disclosed the limit: a disclosure a reader can act on is
+        worth more than one they can only note."""
+        self._cap("the target\n")
+        target = self._blocks()[0].id
+        self._cap("the pointer\n", extra=["--tag", f"ref:#{target}"])
+        r = self._amend(target, "x\n")
+        self.assertIn("Checked: 1 pile(s)", r.stderr)
+        self.assertIn("p.txt", r.stderr)
+        self.assertIn("--also", r.stderr)
+
+    def test_also_widens_the_check_to_a_pointer_in_ANOTHER_pile(self):
+        """The hole the disclosure was disclosing. A citation living in a different pile was
+        silently rewritable; `--also` closes it for the piles you name. Opt-in, because a
+        tool that hunted for related piles by itself would be guessing — and a wrong guess
+        here is a wrong REFUSAL, which sends you to `push` for a typo."""
+        self._cap("the target\n")
+        target = self._blocks()[0].id
+        other = os.path.join(self.dir, "other.txt")
+        subprocess.run(
+            [sys.executable, "scribe.py", "capture", "--source", "schnee", "--tag", "topic:t",
+             "--tag", f"ref:p.txt#{target}", "--append", other],
+            input="a citation living elsewhere\n", capture_output=True, text=True)
+        # without --also the amendment goes through: the other pile is not seen
+        self.assertEqual(self._amend(target, "rewritten\n").returncode, 0)
+        # with it, the pointer is found, named, and located
+        r = subprocess.run(
+            [sys.executable, "scribe.py", "amend", target, self.pile, "--also", other],
+            input="rewritten again\n", capture_output=True, text=True)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("REFUSED", r.stderr)
+        self.assertIn("other.txt", r.stderr)
+        self.assertIn("Checked: 2 pile(s)", r.stderr)
+
+    def test_an_identical_replacement_writes_nothing_and_says_so(self):
+        self._cap("unchanged\n")
+        h = self._blocks()[0].id
+        r = self._amend(h, "unchanged\n")
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("unchanged", r.stderr)
+        self.assertIn("Nothing written", r.stderr)
+
+    def test_an_empty_replacement_is_refused_because_deletion_is_not_this_verb(self):
+        self._cap("real content\n")
+        h = self._blocks()[0].id
+        r = self._amend(h, "\n")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("deletion", r.stderr)
+        self.assertEqual(self._blocks()[0].body, "real content")
+
+    def test_it_reports_the_act_it_performed_not_the_one_capture_performs(self):
+        """A small lie caught by running it: the shared findings-reporter said "captured
+        block", and the pile did not grow. The verb is passed in."""
+        self._cap("before\n")
+        h = self._blocks()[0].id
+        r = self._amend(h, "after\n")
+        self.assertIn("amended block", r.stderr)
+        self.assertNotIn("captured block", r.stderr)
+
+
+
+class TestTheMovingName(unittest.TestCase):
+    """`@name:` — the Forth dictionary ported, 2026-08-05.
+
+    THE TENSION IT ANSWERS, in the sovereign's words: "it would be corralling my living
+    impulses into frozen addended crystallized blocks over and over???"
+
+    Before this, saying one thing better meant `push`: a new block, `@replaces:` on it,
+    `@superseded:` written BACK onto the old one, and a chain to keep in step. Say it five
+    times and the pile holds five crystals and four bookkeeping writes, and has quietly
+    become a record of your revisions rather than of what you think.
+
+    gforth has answered this since 1970: define `foo` twice and it prints `redefined foo`
+    and moves on. The old definition stays in the dictionary, unmarked and still findable.
+    What moved is not the old thing — it is what THE NAME finds. These tests pin that."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.pile = os.path.join(self.dir, "living.txt")
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def _say(self, body, name="coupling-law"):
+        return subprocess.run(
+            [sys.executable, "scribe.py", "capture", "--source", "schnee",
+             "--name", name, "--tag", "topic:law", "--append", self.pile],
+            input=body, capture_output=True, text=True)
+
+    def _blocks(self):
+        return [b for b in scribe.parse_pile(pathlib.Path(self.pile).read_text()) if b.id]
+
+    def test_saying_it_again_MARKS_NOTHING_and_appends_no_bookkeeping(self):
+        """THE LOAD-BEARING TEST OF THE WHOLE MECHANISM. Three sayings of one thing produce
+        three blocks and NOTHING else: no @superseded:, no @replaces:, no chain, no counter,
+        no trace of the act of revising. The pile records what you think, not the history of
+        your getting there — which is what restic is for (§3.1, the second doorway)."""
+        for body in ("first try\n", "said better\n", "said better still\n"):
+            self._say(body)
+        blocks = self._blocks()
+        self.assertEqual(len(blocks), 3)
+        for b in blocks:
+            keys = [k for k, _ in b.tags]
+            self.assertNotIn(scribe.SUPERSEDED_KEY, keys, "a mark was written back")
+            self.assertNotIn(scribe.REPLACES_KEY, keys, "a chain link was written")
+        # and the earlier blocks are byte-for-byte what they were
+        self.assertEqual(blocks[0].body, "first try")
+        self.assertEqual(blocks[1].body, "said better")
+
+    def test_redefinition_is_ANNOUNCED_at_the_moment_of_the_act(self):
+        """The placement is the whole of its value, and it is gforth's. A redefinition
+        learned about next week is one you have already built on — so it is said in the
+        stream you are already reading, unprompted, on the capture that causes it. The first
+        capture of a name says nothing, because nothing happened."""
+        first = self._say("first try\n")
+        self.assertNotIn("redefined", first.stderr)
+        second = self._say("said better\n")
+        self.assertIn("redefined coupling-law", second.stderr)
+        self.assertIn("UNTOUCHED", second.stderr)
+        self.assertIn("nothing is owed", second.stderr)
+
+    def test_the_name_finds_the_newest_and_the_rest_still_resolve(self):
+        """The dictionary's rule: a name resolves to its most recently ADMITTED definition,
+        and the shadowed ones are still there — not deleted, not marked, still executable by
+        anything that already holds them. Here: still resolvable by handle."""
+        for body in ("first try\n", "said better\n", "said better still\n"):
+            self._say(body)
+        blocks = self._blocks()
+        self.assertEqual(scribe.recall(blocks, "coupling-law").body, "said better still")
+        self.assertEqual(len(scribe.definitions_of(blocks, "coupling-law")), 3)
+        for b in blocks:
+            self.assertIs(scribe.resolve_handle(blocks, b.id), b)
+
+    def test_ARRIVAL_ORDER_decides_the_live_one_NOT_the_timestamp(self):
+        """A `--ts` can be pinned or backdated — both are shipped, supported acts. Sorting
+        definitions by timestamp would let a backdated capture silently become the live
+        definition of a name, which is a thing happening to your pile that you did not ask
+        for. The pile is append-only and its order is a FACT about what happened; a stated
+        moment is a CLAIM. Where they disagree, the name follows the pile."""
+        self._say("said now\n")
+        subprocess.run(
+            [sys.executable, "scribe.py", "capture", "--source", "schnee",
+             "--name", "coupling-law", "--ts", "2020-01-01T00:00:00.000000",
+             "--tag", "topic:law", "--append", self.pile],
+            input="backdated, but admitted second\n", capture_output=True, text=True)
+        self.assertEqual(scribe.recall(self._blocks(), "coupling-law").body,
+                         "backdated, but admitted second")
+
+    def test_redefinitions_are_DERIVED_and_never_written_back(self):
+        """The identical contract `backlinks` has held since v1.1.2, for the identical
+        stated reason. A pile that recorded its own redefinitions would be maintaining a
+        chain, and maintaining a chain is the paperwork this exists to abolish. Pinned by
+        comparing the file before and after asking the question."""
+        for body in ("first try\n", "said better\n"):
+            self._say(body)
+        before = pathlib.Path(self.pile).read_text()
+        rep = scribe.redefinitions(self._blocks())
+        self.assertEqual(list(rep), ["coupling-law"])
+        self.assertEqual(len(rep["coupling-law"]), 2)
         import contextlib, io
-        edited = os.path.join(self.dir, "e.txt")
-        blocks = self._pile(["one", "two"])
-        blocks[0].body = "edited"
-        with open(edited, "w", encoding="utf-8") as fh:
-            fh.write(scribe.stamp_for(self.g) + "\n" + scribe.serialize_pile(blocks))
-        nomint = os.path.join(self.dir, "n.txt")
-        legacy = scribe.Block(id="old1", ts="2026-01-01T00:00",
-                              tags=[("topic", "t"), ("source", "self")], body="x")
-        with open(nomint, "w", encoding="utf-8") as fh:
-            fh.write(scribe.stamp_for(self.g) + "\n" + scribe.serialize_pile([legacy]))
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(scribe.main(["verify", edited]), 0)
-            self.assertEqual(scribe.main(["verify", nomint]), scribe.EXIT_FINDINGS)
+            scribe.main(["names", self.pile])
+        self.assertEqual(pathlib.Path(self.pile).read_text(), before,
+                         "asking the question changed the pile")
+
+    def test_recall_SAYS_WHAT_IT_DID_NOT_SHOW(self):
+        """§3.8 as amended. Handing back the live definition in silence would make a name
+        look as though it had only ever had one — an instrument reporting its blindness as
+        an observation. It names the count and the handles it withheld."""
+        import contextlib, io
+        for body in ("first try\n", "said better\n"):
+            self._say(body)
+        buf, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+            scribe.main(["recall", "coupling-law", self.pile])
+        self.assertIn("NOT SHOWN", err.getvalue())
+        self.assertIn("1 earlier definition", err.getvalue())
+        self.assertIn("said better", buf.getvalue())
+        self.assertNotIn("first try", buf.getvalue())
+
+    def test_push_still_writes_its_mark_because_that_is_a_DIFFERENT_ACT(self):
+        """WHAT THIS DOES NOT REPLACE, pinned so the next reader does not tidy `push` away.
+        Sometimes the supersession IS the saying, and you want the reader who wanders into
+        the outdated block to be told IN THE FILE, with the tool off (§4.3) — a property the
+        gForth build cannot have at all. The change is that `push` is no longer the ONLY way
+        to say a thing again. Four acts; choosing between them is the keeper's."""
+        src = pathlib.Path(scribe.__file__).read_text()
+        self.assertIn("SUPERSEDED_KEY", src)
+        self.assertIn(f'"{scribe.SUPERSEDED_KEY}"', src)
+        # and a name never triggers it
+        for body in ("first try\n", "said better\n"):
+            self._say(body)
+        text = pathlib.Path(self.pile).read_text()
+        self.assertNotIn("@superseded:", text)
+
 
 
 class TestDuplicatesAudit(unittest.TestCase):
@@ -1615,7 +1900,12 @@ class TestIdentityKindGuards(unittest.TestCase):
     testable is the DUTIES the clause imposes on observable surfaces. Four fall straight
     out of the clause's own sentences, and this class is all four."""
 
-    LEGAL = ("nominal", "structural", "handle")
+    # `none` added 2026-08-05 with `gen_seal`: an issuing site whose honest declaration is
+    # that what it issues is NOT an identity. The lint's duty is that no site inherits a kind
+    # by default, and "none, and here is why" satisfies that duty exactly. Its absence from
+    # this set is part of how `@mint:` came to be both an identity and an integrity check —
+    # there was no way to declare a digest that names nothing, so it was declared an identity.
+    LEGAL = ("nominal", "structural", "handle", "none")
 
     # ---- GUARD 1: the kind-declaration lint ------------------------------------------
     def test_guard1_every_issuing_site_declares_its_kind(self):
@@ -1657,10 +1947,11 @@ class TestIdentityKindGuards(unittest.TestCase):
         it is a failing assertion rather than a silent wrong answer. The declaration says
         what was ruled; this proves the code enacts it; disagreement is the drift.
 
-        The surface is CAPTURE, not the pure function — `gen_mint` is deterministic given
-        its arguments (and must be, for testability). What makes scribe nominal is that two
-        declarings cannot BE given the same arguments: the ordinal differs. Testing the
-        function alone would pass a structural tool and prove nothing."""
+        The surface is CAPTURE, not the pure function — `gen_handle` is deterministic given
+        its arguments (and must be, for testability). What makes scribe nominal is that the
+        pile REFUSES to reissue a handle it has already issued, so two declarings cannot end
+        up as one. Testing the function alone would pass a structural tool and prove
+        nothing."""
         d = tempfile.mkdtemp()
         try:
             pile = os.path.join(d, "twins.txt")
@@ -1670,7 +1961,7 @@ class TestIdentityKindGuards(unittest.TestCase):
                      "--ts", "2026-08-01T10:00", "--tag", "topic:x", "--append", pile],
                     input="agreed\n", capture_output=True, text=True)
             blocks = [b for b in scribe.parse_pile(pathlib.Path(pile).read_text()) if b.id]
-            ids = [dict(b.tags)[scribe.MINT_KEY] for b in blocks]
+            ids = [b.id for b in blocks]
             self.assertEqual(len(ids), 2)
             if scribe.IDENTITY_KIND == "nominal":
                 self.assertEqual(len(set(ids)), 2,
@@ -1682,19 +1973,29 @@ class TestIdentityKindGuards(unittest.TestCase):
             shutil.rmtree(d, ignore_errors=True)
 
     # ---- GUARD 3: the whole-identity check --------------------------------------------
-    def test_guard3_identity_is_whole_and_only_the_handle_is_truncated(self):
-        """'Truncate for filing, never for identity' — directly assertable. The stored
-        identity is the full digest length; truncation appears only in the handle; and the
-        handle-resolver refuses ambiguity rather than guessing (the companion clause's
-        half, which doubles as this clause's proof that the two are separate things)."""
-        full = len(hashlib.sha256(b"x").hexdigest())
-        block, _ = scribe.make_block("body", [("topic", "x")], "s",
-                                     ts="2026-01-01T00:00", genesis="g" * 64)
-        mint = dict(block.tags)[scribe.MINT_KEY]
-        self.assertEqual(len(mint), full, "the identity was truncated")
-        self.assertTrue(mint.startswith(block.id), "the handle is not a prefix of the mint")
-        self.assertLess(len(block.id), len(mint), "no short handle exists — see the converse duty")
-        # and the separation is load-bearing: ambiguity refuses, never resolves
+    def test_guard3_the_abbreviation_is_CHECKED_and_ambiguity_refuses(self):
+        """REWRITTEN 2026-08-05, and the rewrite is the clause holding while its mechanism
+        changed underneath.
+
+        This used to assert `truncate for filing, never for identity` STRUCTURALLY: a whole
+        64-hex identity exists, the handle is a prefix of it, the prefix is shorter. That
+        shape is gone — there is no long form any more, because the long form was doing
+        integrity's job under identity's name.
+
+        What §3.16 actually requires survives intact, and it is the OTHER half of its own
+        sentence: an abbreviation must be CHECKED, never assumed. Knuth's WEB rule. So the
+        assertable duties are (a) the issuer refuses to reuse a name the pile already holds,
+        and (b) the resolver refuses ambiguity rather than guessing. Both are what the
+        2026-08-01 defect actually broke; neither depended on there being a longer form.
+
+        The guard that WOULD have been lost is added back as its own test — that identity
+        does not depend on the body — which is the duty this change introduced."""
+        # (a) the issuer checks, at issue time
+        ts = "2026-01-01T00:00:00.123456"
+        first = scribe.gen_handle(ts)
+        self.assertNotEqual(scribe.gen_handle(ts, taken={first}), first,
+                            "the abbreviation was assumed, not checked")
+        # (b) the resolver refuses ambiguity rather than guessing
         dupes = scribe.parse_pile(DUPE_PILE)
         with self.assertRaises(scribe.AmbiguousHandle):
             scribe.resolve_handle(dupes, "a8eb")

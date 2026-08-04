@@ -6,3 +6,7 @@ __pycache__/
 scratchpad_22March2026.txt
 Chatgpt_SynOfGroknClaude_ClaudeCode_Final.txt
 ProjectNamirha_chatgpt_CommentOnVessel.txt
+
+# Reference clones read during design work (637M, each with its own .git).
+# Read, never published, never vendored.
+support-ref/

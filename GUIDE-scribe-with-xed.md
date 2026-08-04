@@ -100,11 +100,11 @@ internalise:
 The block header looks like this and is plain text you can read with Scribe switched off:
 
 ```
-@@ #c98b 2026-07-07T19:48:03.112904 @act:protect-against-bit-rot @path:toward-integrity-over-convenience @topic:nas @source:gemini @mint:c98b4f1a…64 hex…
+@@ #2904 2026-07-07T19:48:03.112904 @act:protect-against-bit-rot @path:toward-integrity-over-convenience @topic:nas @source:gemini
 ZFS vs ext4: use ZFS on the NAS for checksums and snapshots.
 ```
 
-`@@` starts a block; `#c98b` is its **handle**; the `@key:value` tags are what views filter
+`@@` starts a block; `#2904` is its **id**; the `@key:value` tags are what views filter
 on. Everything after the header line, until the next `@@`, is your verbatim text.
 
 **The two tags carrying the meaning are `@act:` and `@path:`** — what the block *does*, and
@@ -113,35 +113,109 @@ it does not say what the block means. A block tagged with a topic and nothing el
 bench sheet calls a dead tag, *a noun in a drawer*. Which tags to write is that sheet's
 business, not this guide's — but the example above is the shape to copy.
 
-**Two names on that line, doing two different jobs (new in v1.3.0).** This is worth one
-minute, because it changes what you can safely type:
+**The `#2904` at the front is the whole of the block's identity (changed in v1.4.0).** This
+is worth one minute, because it changes what you can safely do.
 
-| | | |
+It is the **right-hand digits of the timestamp beside it** — look: `…03.112904` ends in
+`2904`. That is deliberate, so you can tell at a glance that a header has not been made up.
+If a shorter form is already taken in this pile, capture issues a longer one and says so.
+
+**It says nothing about what the block contains, and that is the point.** Correcting a word
+does not make a block a different block. Two blocks saying exactly the same thing are still
+two sayings, because identity comes from *when it was declared*, never from *what it says*.
+
+Three practical upshots:
+
+- **You can abbreviate an id**, git-style: `scribe tag 290 pile.txt …` works if `290` names
+  exactly one block. If it names two, scribe **refuses and lists them** instead of guessing —
+  type another character.
+- **Ids are unique inside their own pile, not across piles.** The pile is the namespace, the
+  way a folder is for a filename. Two piles may hold a `#2904`; when you need to point across,
+  write `pile.txt#2904`, which is what `scribe backlinks` already speaks.
+- **Older blocks carry a long `@mint:` hash and a few carry nothing.** Both are fine. `@mint:`
+  was the identity scheme used between 2026-08-01 and 08-04; it is kept readable, it is
+  reported as *legacy* by `scribe verify`, and it is **never upgraded behind you**.
+
+### If you want a body frozen: `--seal`
+
+```sh
+scribe capture --seal --append pile.txt …
+```
+
+That adds a long `@sealed:` hash at the end of the header, over the body, the moment and
+`@source:`. Then `scribe verify pile.txt` will tell you if any of the three changed.
+
+**It is opt-in, per block, and most blocks should not have it.** Until v1.4.0 every block was
+effectively sealed — the identity itself covered the body — which meant every typo you fixed
+was reported forever as an edit, and the only way to avoid the report was to add a whole new
+block. Sealing is now something you *ask for*, on the few blocks where you want the wording
+held as it stands. `scribe verify` always says how many blocks it did **not** check, so a
+quiet result never reads as a clean bill for the whole pile.
+
+### Saying a thing again, without paperwork: `@name:`
+
+This is the one worth knowing. Most of what you write is a redraft of what you just wrote.
+
+```sh
+echo "Structure never informs its material." |
+  scribe capture --name coupling-law --append pile.txt --tag act:… --tag path:…
+
+# a week later, you say it better:
+echo "A structure cannot tell its material what to be; a person couples them." |
+  scribe capture --name coupling-law --append pile.txt --tag act:… --tag path:…
+#   redefined coupling-law — 1 earlier definition(s) in pile.txt: #6308
+#   They are UNTOUCHED and still resolve by handle; nothing was marked and nothing is owed.
+```
+
+**Nothing is written onto the earlier block. There is no chain to keep in step. Nothing is
+owed.** The earlier blocks sit exactly where they were, unmarked, still reachable by their
+own ids. What moved is what the *name* finds:
+
+```sh
+scribe recall coupling-law pile.txt          # the live one — and it says how many it didn't show
+scribe recall coupling-law pile.txt --all    # the whole lineage, oldest first
+scribe names pile.txt                        # every name, and which definition is live
+```
+
+This is Forth's dictionary, which has worked this way since 1970: define a word twice and it
+prints `redefined foo`, leaves the old definition standing, and moves the **name** rather than
+the thing.
+
+**Names have no rules.** Unlike `@act:` and `@path:` — which are a shared vocabulary and only
+work if they compare — a name is yours and singular. Scribe refuses only what would break the
+header (a space, for instance). Beyond that, write what you like.
+
+### Fixing a typo: `scribe amend`
+
+```sh
+echo "the quick brown fox" | scribe amend '#2904' pile.txt
+```
+
+In place. **Nothing appended, nothing superseded, nothing recorded** — a typo is not an event,
+and the history of how a sentence reached its wording lives in your backups, which is where
+this project has always put it.
+
+It **refuses** in two cases, and both are the tool declining to act on your behalf rather than
+protecting you from yourself:
+
+- **Something points at the block.** Someone wrote `@ref:#2904` *about the wording that is
+  there now*; changing it silently rewrites their citation. That is precisely what `push` is
+  for, and the refusal says so and names what points at it. Add `--also other.txt` to check
+  more piles — it only sees the piles you name, and it tells you which ones those were.
+- **The block is sealed.** You declared that body should be held as it stands. Breaking your
+  own seal is your act, not the tool's.
+
+### So there are four ways to change something, and choosing is yours
+
+| | when | what it costs the pile |
 |---|---|---|
-| `#c98b` at the front | the **handle** — the short name | yours to type, and what every `@ref:`-style tag points at |
-| `@mint:c98b4f1a…` at the end | the **identity** — a whole 64-character fingerprint | nobody types it; nothing points at it; **never edit it** |
+| `capture` | a new saying | one block |
+| `amend` | a typo. Nothing happened. | nothing |
+| `--name` | *I say this better now* | one block, no marks, no chain |
+| `push` | a revision where the *supersession itself* is worth recording in the file | one block + one `@superseded:` |
 
-Why two? Because a name and an identity want opposite things. A name must be short enough to
-type — and therefore short enough that two blocks could want the same one. An identity must
-be long enough that they never can. One four-character token was doing both jobs, and it
-broke: two blocks saying the same thing on the same minute got the *same* id, and a push then
-landed an edit on the wrong one. The fix is not a longer id; it is **two fields**.
-
-The practical upshot, in four lines:
-
-- **The handle can grow.** If `#c98b` were already taken, capture would issue `#c98b1` and
-  tell you so. It is never renamed afterwards.
-- **You can abbreviate a handle**, git-style: `scribe tag c98 pile.txt …` works if `c98`
-  names exactly one block. If it names two, scribe **refuses and lists them** instead of
-  guessing — type another character.
-- **A block's identity says two identical sayings are two sayings**, not one stored twice.
-  That is the whole reason the mint is not computed from what the block says.
-- **Piles made before 2026-08-01 have no mints.** They are not broken and are not upgraded
-  behind you; `scribe duplicates pile.txt` names them as legacy. See the end of this guide.
-
-The mint is 64 characters of hex on the end of every header, and yes, it is ugly. It sits
-**last** on purpose: your eye meets the vocabulary you came for — `@topic:`, `@act:`,
-`@source:` — and the hash trails off the end of the line where you can ignore it.
+`push` is still right whenever you want the reader who wanders into the outdated block to be
+warned **in the file, with the tool off**. It is no longer the only way to say a thing twice.
 
 **Which tags to write is a separate sheet, deliberately.** Scribe accepts *any* `@key:value` —
 there is no list of approved keys in the code — so the vocabulary is a discipline you keep, not
@@ -227,7 +301,9 @@ instead.) Path B is the closest thing to "grab from xed, drop in the pile" in on
 sovereignty line it won't cross). The `--topic`/`--tag` flags are you telling it what the
 block *is*. A block with no topic just lives in arrival order and shows up in no topic view
 — which is fine; tag it later with `scribe tag c98b pile.txt --topic nas` when you decide.
-(One tag is not yours: `scribe tag … --tag mint:…` is **refused**. The identity is minted
+(Two tags are not yours: `scribe tag … --tag sealed:…` and `--tag mint:…` are **refused**.
+A seal is issued by `capture --seal` over the body that was actually declared; writing one by
+hand would be asserting the check instead of performing it. A `@mint:` is a retired identity
 once, at capture, and is not vocabulary.)
 
 **And one tag is yours but is sealed: `@source:`.** It is folded into the block's identity at
@@ -279,7 +355,7 @@ its handles are real too; yours will differ.)
 
 ```
 pushed home: 1 block(s) superseded — nothing was overwritten
-  #2ea7 -> #b344   (#2ea7 keeps its body and its @mint:, and gains one tag: @superseded:#b344)
+  #2ea7 -> #b344   (#2ea7 keeps its body and its id, and gains one tag: @superseded:#b344)
   The old blocks are still there and still say what they said. To correct one
   WITHOUT leaving that history in the pile, edit it directly in your editor —
   restic keeps that history instead. Both doors are yours; this one is push's.
@@ -292,10 +368,10 @@ now in the canonical pile and you can delete `nas.view` without a second thought
 like afterwards.** Your edit did not replace anything. There are now two blocks:
 
 ```
-@@ #2ea7 …  @topic:nas @source:gemini @superseded:#b344 @mint:2ea7…
+@@ #2ea7 …  @topic:nas @source:gemini @superseded:#b344
 ZFS vs ext4: use ZFS on the NAS for checksums and snapshots.       ← untouched, and marked stale
 
-@@ #b344 …  @topic:nas @source:gemini @replaces:#2ea7 @mint:b344…
+@@ #b344 …  @topic:nas @source:gemini @replaces:#2ea7
 ZFS vs ext4: use ZFS on the NAS for checksums and snapshots.
 Also: scrub monthly.                                               ← your edit, as its own block
 ```
@@ -480,7 +556,7 @@ citation half if you only want the tag-value scan.
 
 **`scribe duplicates` (v1.3.0) — "do two blocks answer to the same name?"** In a pile made by
 v1.3.0 or later this should always come back empty, because handles are checked as they are
-issued. It matters for the piles you already had: those were made by a scribe that could mint
+issued. It matters for the piles you already had: those were made by a scribe that could issue
 the same id twice, and this is how you find out whether yours did.
 
 ```bash
@@ -495,49 +571,53 @@ can see whether they are one saying recorded twice or two different sayings:
 ```bash
 scribe duplicates old-pile.txt
 #   old-pile.txt — 2 block(s), 1 duplicated handle(s), NO @genesis: line (legacy pile)
-#     2 block(s) carry no @mint: — minted before the identity split. Named, not upgraded.
 #     #aaaa — 2 blocks
-#         2026-01-01T00:00  no @mint: (legacy)  'first saying'
-#         2026-01-02T00:00  no @mint: (legacy)  'second saying'
+#         2026-01-01T00:00  'first saying'
+#         2026-01-02T00:00  'second saying'
 #         ^ all legacy: whether these are one saying or two cannot be decided by the tool.
 #           Yours to rule.
 ```
 
-**It never repairs anything, and that is deliberate** — re-minting a block would break every
+**It never repairs anything, and that is deliberate** — reissuing an id would break every
 `@ref:` already pointing at it. It reports; the ruling is yours. While a handle is ambiguous,
 `push` and `tag` **refuse to write to it at all** and list the candidates, rather than picking
 one and getting it wrong silently. That refusal is the actual protection; `duplicates` is just
 how you go looking before you get refused.
 
 **Old piles, and what to do about them.** A pile started before 2026-08-01 has no `@genesis:`
-line and its blocks have no `@mint:`. Nothing is wrong with it — every handle that has worked
-since capture keeps working — and scribe will **not** upgrade it behind your back, because
-re-minting would break the relational tags pointing in. Verbs that meet one say so:
+line. Nothing is wrong with it, nothing depends on that line any more, and scribe will **not**
+change it behind your back. Verbs that meet one mention it and move on:
 
 ```
-NOTE: pile.txt carries no @genesis: line (a pile born before 2026-08-01). Its mints fall
-back to the pile's PATH alone — still distinct from other piles, but carrying no birth
-moment. Run `scribe stamp` on a pile you have unstamped, or leave it.
+NOTE: pile.txt carries no @genesis: line (a pile born before 2026-08-01), so it carries no
+birth moment. Nothing now depends on that — identity stopped folding the genesis in on
+2026-08-05 — so this is a note about the pile's history, not a defect.
 ```
 
-`scribe stamp pile.txt` gives it a genesis from that moment on, so blocks captured *from now*
-are minted properly. Blocks already in it keep exactly the handles they have. Leaving it alone
-is also a fine answer.
+`scribe stamp pile.txt` adds one if you want the record of when the pile began. Leaving it
+alone is equally fine.
 
-**`scribe verify` (v1.3.3) — "is this block still the one I captured?"** You have two doorways
-for changing a block: `push`, which appends and leaves a trail, and your own editor, which
-leaves none in the pile. This tells you afterwards which door each block went through.
+**`scribe verify` — "is this sealed block still the one I sealed?"** You have two doorways for
+changing a block: `push`, which appends and leaves a trail, and your own editor, which leaves
+none in the pile. On the blocks you asked to have **sealed**, this tells you afterwards which
+door each one went through.
 
 ```bash
 scribe verify pile.txt
-#   pile.txt — 3 block(s): 2 as captured, 1 edited in place, 0 with no mint
-#       #b5af  2026-08-02T13:36:51.552200  edited in place since capture
+#   pile.txt — 3 block(s): 1 as sealed, 1 changed since sealing, 1 not sealed
+#       #5178  2026-08-02T13:36:51.552200  changed since it was sealed
 #         'Original sentence one. Rewritten final sentence.'
+#     1 of 3 block(s) carry no @sealed:, so THE CHECK DID NOT RUN for them. …
 ```
 
-It works because the mint was computed from the block's own body, timestamp and `@source:` —
-so re-computing it from what is in the file now and comparing to the stored `@mint:` says
-whether anything moved. No database, no history, no copy of your old text anywhere.
+It works because the seal was computed from the block's own body, timestamp and `@source:` —
+so re-computing it from what is in the file now says whether any of the three moved. No
+database, no history, no copy of your old text anywhere.
+
+**It always tells you how many blocks it did not check**, and blocks carrying the retired
+`@mint:` are reported as *legacy* rather than checked: a mint needed the pile's genesis and
+the block's frozen position, so it cannot be re-derived from what the file alone says, and
+scribe does not pretend otherwise.
 
 **Read the wording carefully, because it is deliberate.** `edited in place since capture` is a
 **statement of fact, not a complaint.** Editing a block by hand is a door the tool deliberately
@@ -545,37 +625,42 @@ leaves open for you; scribe has no business grading you for walking through it. 
 this verb has no severities, no "invalid", no warnings — and a test enforces that, so it
 cannot drift into scolding you later.
 
-Three things it will tell you:
+Four things it will tell you:
 
-- **`as captured`** — untouched since it was written.
-- **`edited in place since capture`** — the body, timestamp or `@source:` changed in the file.
+- **`as sealed`** — untouched since you sealed it.
+- **`changed since it was sealed`** — the body, timestamp or `@source:` changed in the file.
   It cannot tell you *what* changed: the pile keeps no earlier copy, by design, so only restic
   or git holds the before.
-- **`no mint — this check did not run`** — a block typed straight in, or captured before
-  v1.3.0. Not a fault, and deliberately *not* reported as a clean pass either.
+- **`not sealed — this check did not run`** — the ordinary case, since sealing is opt-in.
+  Not a fault, and deliberately *not* reported as a clean pass either.
+- **`legacy`** — the block carries the retired `@mint:` and no seal. A mint needed the pile's
+  genesis and the block's frozen position, so it cannot be re-derived from what the file alone
+  says. Reported as uncheckable rather than as absent, and never upgraded behind you.
 
-**If you cut a block out of the pile, it will not panic.** Deleting a block shifts every later
-block's position, and a naive check would report the whole rest of the file as changed — which
-would be intolerable if you were, say, cutting a scene from a long piece of writing. Instead it
-recognises the pattern and says so:
+**Only the first two set the exit code**, and that is on purpose. Unsealed and legacy blocks
+are permanent conditions of ordinary piles, so a nonzero exit for either would fire on every
+run forever — which teaches you to stop reading exit codes, and then the one that matters gets
+ignored too.
 
-```
-POSITION SHIFT, not edits — and this is the ordinary shape of cutting material.
-  From #05f4 onward, every block re-derives exactly at a constant offset of 1, which is what
-  1 block(s) removed from the pile earlier does to the position each later block was minted at.
-  Their BODIES ARE AS CAPTURED — only their position moved.
-```
+**If you cut a block out of the pile, nothing else notices.** That was not always true. Until
+v1.4.0 a block's identity contained its *position*, so deleting one made every later block
+fail to re-derive, and the tool needed a whole extra mechanism to recognise that pattern and
+report *"1 block removed"* rather than a wave of false alarm. Identity no longer contains a
+position, so removing a block is simply invisible to every other block — which is what an
+append-only file of independent sayings should have meant all along. The clever machinery went
+with the thing that made it necessary.
 
-On an old pile (made before v1.3.0) it will say most blocks have no mint and that the check
-therefore did not run on them. That is honest rather than reassuring, which is the point.
+On an ordinary pile it will say most blocks are not sealed and that the check therefore did
+not run on them. That is honest rather than reassuring, which is the point — and under an
+opt-in seal it is the normal state of affairs, not a gap to close.
 
 **Your pile explains itself to whoever opens it.** A pile created from v1.1.0 onward starts with
 a short comment header saying what the format is, which commands search it properly, and why a
 plain `grep` over it hands back fragments — a body line with no id or tags, or a header with no
-claim, never a whole record. From v1.3.0 it also explains the long hex at the end of each header
-(the mint) and carries the pile's own `@genesis:` line: this pile's birth identity, and the
-reason its blocks stay distinct from every other pile's without any central register anywhere.
-That matters beyond your own use: if you ever point an AI assistant
+claim, never a whole record. It also explains what the `#id` is, how `@name:` lets a saying be
+said again, and what a `@sealed:` hash means where one appears. It carries the pile's own
+`@genesis:` line too: the moment this pile began, kept as a record worth having rather than as
+something the tool depends on. That matters beyond your own use: if you ever point an AI assistant
 at the drive where your piles live, it meets the instruction **in the file** rather than needing
 you to remember to explain it. For a pile you made before this, run `scribe stamp pile.txt` once.
 It is only ever written when a pile is *created* (or when you run `stamp` yourself), so if you
@@ -598,8 +683,10 @@ tool can check it.
   safe to `push` into; but if you hand-edit a block's `@@ #id …` header you can orphan it.
   Change tags with `scribe tag <id> pile.txt --tag act:… ` / `--remove topic:…`, not by
   retyping the header. **Three things on that line are never yours to retype:** the `#id`, the
-  timestamp, and `@mint:`. The exception is the one named above: editing a **body** by hand,
-  when you deliberately want the correction without a supersession trail in the pile.
+  timestamp, and any digest (`@sealed:`, or a legacy `@mint:`). For a body, you no longer need
+  to hand-edit at all — `scribe amend '#id' pile.txt` does exactly that, in place and without a
+  trail, and refuses in the two cases where doing it silently would cost someone else
+  something.
 - **A push adds a block; it does not change one.** If your pile got longer after a push,
   nothing went wrong — that is the design. `scribe view … --current` gives you the tidy read;
   the pile itself keeps the whole movement.

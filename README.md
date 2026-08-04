@@ -33,7 +33,7 @@ back in the pile by block id.
 ## The pile format
 
 ```
-@@ #<handle> <ISO-timestamp> @act:protect-against-bit-rot @path:toward-integrity-over-convenience @topic:nas @source:gemini @mint:<64-hex>
+@@ #<id> <ISO-timestamp> @act:protect-against-bit-rot @path:toward-integrity-over-convenience @topic:nas @source:gemini
 <the canonical block body, verbatim, any number of lines,
  until the next @@ line or end of file>
 ```
@@ -96,30 +96,104 @@ content-dedup tool over the same piles would declare `structural` and would be r
 
 | | what it is | scope | who uses it |
 |---|---|---|---|
-| **handle** `#a8eb` | short, typeable name — a prefix of the mint | unique **within its pile** | you, and every `@ref:`/`@overrules:`-style tag |
-| **mint** `@mint:…` | the identity: whole SHA-256, never truncated, frozen at capture | globally distinct | nothing points at it; it settles *whether two blocks are the same saying* |
+| **id** `#2644` | the identity: issued at capture, checked unique, never recomputed | unique **within its pile**; write `PILE#id` across piles | you, and every `@ref:`/`@overrules:`-style tag |
+| **name** `@name:…` | *optional.* A name you can say again — it follows you to the newest block carrying it | as you choose | `scribe recall`, `scribe names` |
+| **seal** `@sealed:…` | *optional.* Integrity, not identity: freezes this body, moment and `@source:` | this block | `scribe verify` |
 
-The mint is taken from three facts about the **declaring**, none of them content — which
-pile (`@genesis:`, written into the stamp at the pile's birth), where in that pile's
-arrival order, and when to the microsecond. Content alone cannot separate two identical
-utterances; that is what content-addressing *means*.
+The id is the right-hand digits of the timestamp printed beside it, extended leftward if a
+shorter form is already taken in this pile. **It says nothing about what the block
+contains, deliberately** — correcting a word does not make a block a different block — and
+you can check by eye that a header has not been fabricated, because the id is a tail of its
+own timestamp. Content alone cannot separate two identical utterances anyway; that is what
+content-addressing *means*.
+
+**Changed in v1.4.0, and it is a change of foundation.** Until 2026-08-05 identity was
+`@mint:` — a SHA-256 over the pile, the position, the moment, the speaker **and the body** —
+with the handle as its checked prefix. That fused three different questions into one token:
+*which thing is this* (identity), *where did it come from* (provenance), and *is it as it
+was* (integrity). The consequence was that **every corrected word was an identity event**,
+so fixing a typo meant either growing the pile by a whole block or leaving the tool. The
+three questions now have three answers: the id, the tags, and an opt-in seal.
+
+The evidence was gathered before the change, not after: `verify` across every real pile —
+**76 blocks — had reported `edited in place` zero times**, and 45 of those 76 carried no
+mint at all. The check cost something every day and had never once caught anything.
 
 Consequences worth knowing:
 
-- **Handles grow, they are never renamed.** If a short handle is taken, capture issues a
-  longer one and says so.
-- **A handle resolves by prefix, like git's.** Type `#a8e` for `#a8eb1c` and it resolves —
-  *if* it names exactly one block. If it names two, the verb refuses and asks for more
-  characters rather than picking one.
-- **Ambiguity is refused, never guessed.** If a handle names two blocks, `push` and `tag`
-  write *nothing* and name the candidates. `scribe duplicates PILE` reports them.
-- **Nothing is ever re-minted.** Blocks captured before v1.3.0 carry no `@mint:` and are
-  reported as legacy, not upgraded — re-minting would change ids that relational tags
-  already point at.
-- **Re-capturing the same text no longer reproduces the same id.** That reproducibility
-  *was* the duplicate bug. `--ts` still pins the timestamp for tests.
-- No registry, no manifest, no directory scan. Uniqueness across piles falls out of each
-  pile's own genesis, not from anything central.
+- **Ids grow, they are never renamed.** If a short id is taken, capture issues a longer one
+  and says so.
+- **An id resolves by prefix, like git's.** Type `#264` for `#2644` and it resolves — *if*
+  it names exactly one block. If it names two, the verb refuses and asks for more characters
+  rather than picking one.
+- **Ambiguity is refused, never guessed.** If an id names two blocks, `push` and `tag` write
+  *nothing* and name the candidates. `scribe duplicates PILE` reports them.
+- **Two piles may reuse an id, and that is the model, not a collision.** The pile is the
+  namespace, as a directory is for a filename. The bug fixed in v1.3.0 was two identical ids
+  *inside one pile*, which is still refused.
+- **Nothing is ever reissued.** Blocks carrying the retired `@mint:` keep it: it stays
+  readable, it is reported as legacy by `verify`, and it is not upgraded behind you.
+- **Re-capturing the same text does not reproduce the same id.** `--ts` still pins the
+  timestamp for tests.
+- No registry, no manifest, no directory scan.
+
+### Say it again without paperwork — `@name:` (v1.4.0)
+
+**The pill this swallows:** a living thought is said again, better, over and over. Until
+v1.4.0 the only way to record that was `push` — a new block, `@replaces:` on it,
+`@superseded:` written back onto the old one, and a chain to keep in step. Say a thing five
+times and the pile holds four bookkeeping writes and has become a record of your revisions
+rather than of what you think.
+
+**Forth has answered this since 1970.** Define `foo` twice and gforth does not refuse, does
+not make you supersede anything, and keeps no chain. It prints `redefined foo` in the stream
+you are already reading and moves on; the old definition stays in the dictionary, unmarked
+and still reachable by anything holding it. **What moved is not the old thing — it is what
+the name finds.**
+
+```sh
+echo "Structure never informs its material." |
+  scribe capture --name coupling-law --append pile.txt --tag act:… --tag path:…
+
+echo "A structure cannot tell its material what to be; a person couples them." |
+  scribe capture --name coupling-law --append pile.txt --tag act:… --tag path:…
+#   redefined coupling-law — 1 earlier definition(s) in pile.txt: #6308
+#   They are UNTOUCHED and still resolve by handle; nothing was marked and nothing is owed.
+
+scribe recall coupling-law pile.txt          # what the name finds now
+scribe recall coupling-law pile.txt --all    # the whole lineage, arrival order
+scribe names pile.txt                        # every name, and which definition is live
+```
+
+**Nothing is written onto the earlier blocks. There is no chain in the pile.** `scribe names`
+computes redefinition fresh on every call and never writes back — the same contract
+`backlinks` has held since v1.1.2, and for the same reason: *back-references are derived,
+never hand-written.*
+
+The live definition is the last one **admitted**, not the one with the latest timestamp —
+`--ts` is a supported flag, and sorting by a stated moment would let a backdated capture
+silently take over a name.
+
+### Correct a typo without an event — `scribe amend` (v1.4.0)
+
+```sh
+echo "the quick brown fox" | scribe amend '#2644' pile.txt
+```
+
+In place. Nothing appended, nothing superseded, **nothing recorded** — a typo is not an
+event. It **refuses** if any block in the pile points at the target (`@ref:`, `@replaces:`,
+`@overrules:` …), because someone wrote that pointer *about the wording that is there now*,
+and that is precisely the case `push` exists for. It also refuses a `@sealed:` block, which
+is what makes sealing mean anything.
+
+**Four acts, and choosing between them is yours:**
+
+| | when | what it costs the pile |
+|---|---|---|
+| `capture` | a new saying | one block |
+| `amend` | a typo. Nothing happened. | nothing |
+| `--name` | *I say this better now* | one block, no marks, no chain |
+| `push` | a revision whose supersession is itself worth recording, in the file | one block + one `@superseded:` |
 
 ### Push appends and supersedes — it never overwrites (v1.3.1)
 
@@ -129,16 +203,16 @@ been written to the old wording. It now **appends**.
 
 ```
 before                                  after `scribe push`
-@@ #2ea7 … @topic:nas @mint:2ea7…       @@ #2ea7 … @topic:nas @superseded:#b344 @mint:2ea7…
+@@ #2ea7 … @topic:nas                   @@ #2ea7 … @topic:nas @superseded:#b344
 ZFS on the NAS for checksums.           ZFS on the NAS for checksums.        ← body unchanged
 
-                                        @@ #b344 … @topic:nas @replaces:#2ea7 @mint:b344…
+                                        @@ #b344 … @topic:nas @replaces:#2ea7
                                         ZFS on the NAS for checksums.
                                         Also: scrub monthly.                 ← your edit, as a new block
 ```
 
 **Bodies and identities are inviolable.** Across a push, no existing block's body changes,
-no `@mint:` or handle is reissued, and the only tag an existing block may gain is
+no id is reissued, and the only tag an existing block may gain is
 `@superseded:`, at most one. That is not an overwrite; it is the same act `scribe tag`
 already performs as a named verb.
 
@@ -179,7 +253,7 @@ scribe export topic:nas PILE [--bare] [--joiner S] # clean export to paste into 
     breaks code) — see tagging/TAGS-bench-sheet.md's "For the tangle-loop" section
 scribe push VIEW PILE                 # push edits made in a view home, by #id —
     APPENDS a superseding block, never overwrites. The old block keeps its body and
-    its @mint: and gains exactly one tag, @superseded:#new; the new one carries
+    its id and gains exactly one tag, @superseded:#new; the new one carries
     @replaces:#old and inherits the old block's tags. To correct a block WITHOUT
     leaving that history in the pile, edit it directly — restic keeps that history
     instead. Both doors are yours; this one is push's.
@@ -189,15 +263,18 @@ scribe backlinks TARGET PILE [PILE...] # derive every block whose tag VALUE name
     TARGET (the reverse of @ref:/@overrules:/etc.) — TARGET is #id (this pile) or
     pile.txt#id (a named pile, for relations BETWEEN piles); computed fresh, never
     written back — see tagging/TAG-KEYS-reference-v1-DRAFT.md A.9
-scribe verify PILE [PILE...]          # is each block still the one its @mint: was
+scribe recall NAME PILE [--all]       # what does this name find? (Forth's lookup)
+scribe names PILE [PILE...]           # every @name: and which definition is live
+scribe amend '#id' PILE               # correct a body in place — no block, no mark
+scribe verify PILE [PILE...]          # is each SEALED block still the one its @sealed: was
     issued for? Re-derives every mint from the file itself and reports in FACT-language
     only: `as captured` / `edited in place since capture` / `no mint — this check did
     not run`. A hand-edit is a sanctioned act, so there are no severities here and never
     will be. A cut block is reported as a POSITION SHIFT, not as a wave of edits
 scribe duplicates PILE [PILE...]      # every handle used by more than one block, with
-    each one's @mint: so you can see whether they are one saying or two. Read-only:
+    each one's tags so you can see whether they are one saying or two. Read-only:
     it declares collisions and never repairs them (re-minting would break every
-    relational tag pointing in). Also names blocks with no @mint: as legacy.
+    relational tag pointing in).
 scribe activate CONDITION PILE [PILE...] [--key awaits] # every block currently
     declaring @awaits:CONDITION (or --key), across any piles named — the query
     half of a dpkg-trigger-style interest/activate pair; read-only, never promotes
@@ -221,20 +298,22 @@ keeper's. The discipline that vocabulary is written in lives in [`tagging/`](tag
 `tagging/TAGS-bench-sheet.md` while you work, `tagging/TAG-KEYS-reference-v1-DRAFT.md` when you
 want to know why a key exists. One-line version: a tag should carry **a verb and a toward**.
 
-Three keys are the **tool's**, not yours: `@mint:` (a block's identity — refused by `tag`,
+Three keys are the **tool's**, not yours: `@sealed:`/`@mint:` (digests — refused by `tag`,
 excluded from `keys` with a notice, and it says so), and `@superseded:`/`@replaces:`, which
 `push` writes as the two halves of one supersession. You may still write the supersession pair
-by hand to record a relation `push` had no part in; `@mint:` is never yours to edit.
+by hand to record a relation `push` had no part in; a digest is never yours to edit.
 
 **A pile explains itself.** When `capture --append` creates a pile it writes a short comment
 header at the top — what the format is, which commands search it well, why a plain `grep`
-returns fragments rather than whole records, and what the long hex at the end of each header
-is. Any reader meets it in the file itself, including an assistant asked to search a drive;
+returns fragments rather than whole records, what the `#id` is, and how `@name:` lets a
+saying be said again. Any reader meets it in the file itself, including an assistant asked to search a drive;
 nothing has to be configured or remembered. The header also carries the pile's own
-`@genesis:` line — its birth identity, and the half of every `@mint:` that keeps this pile's
-blocks distinct from every other pile's with no registry anywhere. It is written **only at
-birth** (or by `scribe stamp` on an existing pile), so deleting it keeps it deleted, and
-`--no-stamp` declines it. Every line is a comment in the preamble: block counts, indexes and
+`@genesis:` line — its birth moment, kept as a record of when the pile began. Until v1.4.0
+it was also load-bearing: it was folded into every `@mint:` and was what kept one pile's
+identities distinct from another's. Nothing depends on it now — the pile itself is the
+namespace — and it is retained because when a pile began is worth knowing on its own
+account. It is written **only at birth** (or by `scribe stamp` on an existing pile), so
+deleting it keeps it deleted, and `--no-stamp` declines it. Every line is a comment in the preamble: block counts, indexes and
 round trips are identical with or without it.
 
 A pile born before 2026-08-01 has no `@genesis:` line. It is **not broken** and nothing is

@@ -46,7 +46,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 
-VERSION = "1.3.4"
+VERSION = "1.4.0"
 
 # The one external process the HTML path shells to. Recorded for provenance (§4.4); the
 # tool discloses the running pandoc via `scribe doctor` and hard-fails if it is absent.
@@ -158,11 +158,24 @@ PILE_STAMP = f"""{STAMP_MARK} — one canonical file, appended in arrival order.
 #   @attests: who vouches for it, which is NOT always who wrote it
 # Untagged means unknown, not mine and not anyone's.
 #
-# THE LONG HEX AT THE END OF EACH HEADER is `@mint:` — that block's identity, minted once
-# when it was captured and never recomputed. The short `#id` at the front is its HANDLE:
-# a prefix of the mint, kept unique within this pile, and what every `@ref:`-style tag
-# points at. Two blocks may say exactly the same thing; they are still two sayings, and
-# the mint is what says so. Do not edit either by hand. (scribe {VERSION})
+# THE `#id` AT THE FRONT OF EACH HEADER is that block's identity — issued once when it was
+# captured, checked unique in THIS pile, and never recomputed. It is the digits of the
+# timestamp beside it, taken from the right, so you can check by eye that a header has not
+# been fabricated. It says nothing about what the block contains, on purpose: correcting a
+# word does not make a block a different block. Across piles, write `PILE#id` — the pile is
+# the namespace, as a directory is for a filename. Do not edit it by hand.
+#
+# @name: IS A NAME YOU CAN SAY AGAIN. Capture the same @name: later and the name simply
+# follows you to the new block; the earlier ones are untouched, unmarked, and still resolve
+# by their #id. `scribe recall NAME` finds the live one, `scribe names` lists them all.
+# Nothing is superseded and nothing is owed — this is Forth's dictionary, where redefining a
+# word announces itself and leaves the old definition standing.
+#
+# A LONG HEX `@sealed:` AT THE END OF A HEADER, where one appears, is opt-in: someone asked
+# for that body to be frozen as it stands, and `scribe verify` will say if it changed. Most
+# blocks do not carry one and are meant to be correctable. `@mint:` on an older block is a
+# RETIRED identity scheme (2026-08-01..04); it is kept readable and is no longer checked.
+# (scribe {VERSION})
 """
 
 
@@ -177,10 +190,11 @@ def stamp_for(genesis):
     let the namespace discriminate, and keep the namespace in the artifact."""
     return PILE_STAMP + (
         "#\n"
-        "# THIS PILE'S BIRTH IDENTITY — the `path` half of every @mint: below, and what\n"
-        "# keeps this pile's blocks distinct from every other pile's without any central\n"
-        "# registry. Written once, at birth. Do not edit it; a pile that loses this line\n"
-        "# does not break, but its later blocks are minted on the path alone.\n"
+        "# THIS PILE'S BIRTH MOMENT. Written once, at birth, in-band — no sidecar, no\n"
+        "# database, no registry. Since 2026-08-05 nothing depends on it: a block's\n"
+        "# identity is issued from its own declaring moment and checked within this pile,\n"
+        "# so the pile itself is the namespace. Kept because a record of when a pile began\n"
+        "# is worth having on its own account. Do not edit it; losing it breaks nothing.\n"
         f"# @genesis:{genesis}\n")
 
 
@@ -381,12 +395,27 @@ def serialize_pile(blocks, tag_form="repeated"):
 # two identical utterances; that is what content-addressing MEANS. The fix is therefore not
 # a wider hash but a different KIND of identity.
 #
-# THE BIFURCATION — the whole of this section:
+# THE BIFURCATION AS FIRST BUILT (2026-08-01), and RETIRED four days later:
 #
 #   MINT   the identity. Whole, never truncated, frozen at birth, carried as @mint:.
-#          Takes at least one NON-CONTENT, non-repeating fact about the declaring.
-#   HANDLE the name. Short, typeable, `#a8eb`, what relational tags point at and what
-#          humans read. A prefix of the mint, extended until unique WITHIN THIS PILE.
+#   HANDLE the name. Short, typeable, `#a8eb`, a prefix of the mint.
+#
+# WHAT REPLACED IT (2026-08-05), and why the reasoning below survives the mechanism. The
+# diagnosis in this section is exactly right and is the reason the change was possible: no
+# choice of CONTENT inputs can separate two identical utterances, so the fix is a different
+# KIND of identity, not a wider hash. What it got wrong was the SHAPE of the answer. It built
+# two values where one would do, and the second value — the long one — kept the body in it,
+# which quietly made every correction an identity event and made the pile feel like it was
+# corralling its keeper. There is now ONE identity, `#id`, issued from the declaring moment
+# and checked within the pile; integrity moved out to an opt-in `@sealed:`.
+#
+# AND THE PRIOR ART BELOW HAD ALREADY SAID SO, WHICH IS THE PART WORTH REMEMBERING. The
+# gForth citation at `:2721` — a redefined word leaves the old definition intact and old
+# references still reach the one they meant — was read here as evidence for SEPARATING a
+# name from an identity, and it is that. It is also the complete answer to the corralling,
+# sitting unused in this file for four days: the dictionary lets you redefine, announces it,
+# marks nothing, and moves the NAME rather than the thing. That is now built (`@name:`,
+# `recall`, `names`). Charter §3.19: a citation can be present, correct, and unread.
 #
 # Prior art, unanimous across five systems — every one separates the name you search by
 # from the identity references bind to; scribe alone fused them into one 4-char token:
@@ -406,11 +435,36 @@ def serialize_pile(blocks, tag_form="repeated"):
 #     directory or keeps a manifest.
 # ---------------------------------------------------------------------------
 
-# The `@mint:` tag carries the identity. It is an ordinary tag in the ordinary tag run —
-# NOT new syntax. The brief's draft header put it between the id and the timestamp; that
-# does not parse (HEADER_RE takes the first bare token after the id as the timestamp), so
-# it sits after the timestamp where the existing grammar already accepts it unchanged.
+# RETIRED 2026-08-05. `@mint:` was the identity: sha256 over genesis+ordinal+ts+source+body.
+# It is no longer ISSUED. It is still READ, because 31 blocks in the sovereign's piles carry
+# one and a retired scheme must stay legible rather than become noise (§3.16 live-vs-frozen).
+#
+# WHY IT WENT, and it is one clause, twice:
+#
+#   §3.13 one contract, one place. Every ingredient of the mint was ALREADY STATED, readably,
+#   on the same header line: genesis is the file you are reading, ordinal is the block's
+#   position in it, ts is the timestamp column, source is `@source:`. The mint restated four
+#   visible facts in 64 characters no human can read — two copies of one truth, and the
+#   unreadable copy was the one called "identity".
+#
+#   §3.16 one token, one job. It was doing three: identity (which block is this), provenance
+#   (where and when and from whom), and integrity (is the body as captured). The three are now
+#   three things — the handle, the tags, and `@sealed:` — each nameable and each refusable.
+#
+# THE EVIDENCE, gathered before the change and not after (the brief demanded it): `verify`
+# across all four real piles, 76 blocks, reported `edited in place` ZERO times, and 45 of the
+# 76 carried no mint at all. The integrity job the fusion cost so much to serve had never once
+# fired. That is why this is a removal and not a trade.
 MINT_KEY = "mint"
+
+# `@sealed:` — the integrity job, alone and OPT-IN. sha256 over the body and the header claims
+# a seal is worth freezing. Written only when asked for (`capture --seal`), on the blocks that
+# warrant it, and `verify` reports plainly which blocks carry one and which do not.
+#
+# Opt-in is the whole point. A guarantee that covers everything is a guarantee nobody chose,
+# and its report fires on every ordinary correction — which §3.7-as-amended names as defeating
+# disclosure while satisfying it.
+SEAL_KEY = "sealed"
 
 # THE KIND-DECLARATION. A tool that issues identifiers must say which kind it issues, in
 # band, rather than inheriting a default — because an unruled default is indistinguishable
@@ -435,6 +489,53 @@ MINT_KEY = "mint"
 IDENTITY_KINDS = ("nominal", "structural")
 IDENTITY_KIND = "nominal"
 
+# `@name:` — THE MOVING NAME, ported from the Forth dictionary 2026-08-05.
+#
+# THE TENSION IT ANSWERS, in the sovereign's words: "it would be corralling my living
+# impulses into frozen addended crystallized blocks over and over???" That is the real
+# complaint, and `@mint:` was a symptom of it rather than its cause. A living thought is
+# CONTINUOUS and restated; a pile is DISCRETE and appended. Every time you say the thing
+# better, the tool made you file paperwork — a new block, `@replaces:` on it, `@superseded:`
+# written back onto the old one, a chain to maintain. Say it five times and you have five
+# crystals and four bookkeeping writes, and the pile has quietly become a record of your
+# revisions rather than of what you think.
+#
+# FORTH DOES NOT DO THIS, AND IT IS THE OLDEST WORKING ANSWER ANYONE HAS. Define `foo`, then
+# define `foo` again. gforth does not refuse. It does not make you supersede anything. It
+# does not keep a version chain you have to maintain. It prints
+#
+#     redefined foo
+#
+# in the stream you are already reading, and moves on. The OLD definition is still in the
+# dictionary — still executable, still findable by anything that already resolved to it,
+# never deleted and NEVER MARKED. What changed is not the old thing. What changed is what
+# THE NAME FINDS, because the dictionary is searched newest-first.
+#
+# So: the name moves, and the thing stays exactly where it was.
+#
+#   allowed, not refused           -> capture the same @name: as often as you like
+#   announced in the stream        -> said at the moment of the act, unprompted, on stderr
+#   the old definition survives    -> the earlier block is untouched and still resolvable
+#   nothing marks the old one      -> NO @superseded: is written. No chain exists to keep.
+#   search order resolves the name -> `scribe recall` finds the newest; the rest is DERIVED
+#
+# WHAT THIS DOES NOT REPLACE. `push` still exists and still writes `@superseded:` onto the
+# old block, because sometimes the supersession IS the saying — you want the reader who
+# wanders into the outdated block to be told, in the file, with the tool off (§4.3). That is
+# a real property and the gForth build cannot have it. The change is that it is no longer the
+# ONLY way to say a thing again. Four acts now, and choosing between them is the keeper's:
+#
+#   capture  a new saying
+#   amend    a typo. Nothing happened.
+#   @name:   I say this better now. The name follows me; nothing is marked; no paperwork.
+#   push     a revision whose supersession is itself worth recording, in the file.
+#
+# WHY THE MARK IS DERIVED AND NOT WRITTEN. `scribe names` computes redefinition fresh from
+# the pile every time and never writes back — the identical contract `backlinks` has held
+# since v1.1.2, and for the identical reason: "back-references are derived, never
+# hand-written" (`tagging/TAG-KEYS-reference-v1-DRAFT.md` A.4, after Knuth).
+NAME_KEY = "name"
+
 # The supersession pair. Ruled onto opposite blocks, deliberately and for a stated reason
 # (`tagging/TAGS-bench-sheet.md:232`, `:240`):
 #   @superseded:#new  goes on the OLD block — "the person who needs telling is the one who
@@ -455,12 +556,13 @@ def _tag_value(block, key):
     return None
 
 
-def _insert_before_mint(tags, new_tag):
-    """Place a tag immediately before @mint:, or at the end if the block has none (a
-    legacy block). Keeps the human-facing vocabulary — and any status marker — on the
-    readable side of the 64-hex identity."""
+def _insert_before_digest(tags, new_tag):
+    """Place a tag before any digest tag (`@sealed:`, or a legacy `@mint:`), or at the end
+    if the block carries neither — which, sealing being opt-in, is now the common case.
+    Keeps the human-facing vocabulary, and any status marker, on the readable side of the
+    64 hex."""
     for i, (k, _) in enumerate(tags):
-        if k == MINT_KEY:
+        if k in (SEAL_KEY, MINT_KEY):
             return tags[:i] + [new_tag] + tags[i:]
     return tags + [new_tag]
 
@@ -520,88 +622,85 @@ def genesis_of(text, path):
     return hashlib.sha256(os.path.abspath(path).encode("utf-8")).hexdigest(), False
 
 
-def gen_mint(genesis, ordinal, ts, source, body):
-    """@identity:nominal — issues a block's identity; see IDENTITY_KIND.
+def gen_seal(body, ts, source):
+    """@identity:none — OPT-IN, and IT IS NOT AN IDENTITY. Issued only when asked for.
 
-    The identity: whole SHA-256, never truncated, frozen into the header at birth.
+    The kind-declaration reads `none` because the lint that reads it (TestIdentityKindGuards,
+    guard 1) exists to ensure no issuing site inherits a kind by default — and the honest
+    declaration for this site is that it issues no identity at all. `none` was added to the
+    legal set on 2026-08-05 for exactly this function, which is the first thing scribe has
+    ever issued that is deliberately not an identity. That it needed a new legal value is
+    itself the finding: the old vocabulary had no way to say "this is a digest and it names
+    nothing", which is how one value came to do both jobs.
 
-    THREE non-content facts about the declaring, and they are what make the guarantee:
+    An identity answers *which thing is this*. An integrity check answers *is this thing as
+    it was*. Those requirements point in opposite directions — an identity must be stable
+    across every correction that leaves the saying intact, and an integrity check must be
+    disturbed by exactly those corrections — so §3.16's own reasoning forbids fusing them,
+    the same way it forbids fusing a name and an identity. `@mint:` fused them for four days.
 
-      genesis  WHICH pile this was declared into  (the `path`)
-      ordinal  WHERE in that pile's arrival order (the `position`)
-      ts       WHEN it was declared               (the `act`)
+    WHAT IT COVERS, and each is a claim someone might want frozen rather than merely stated:
+    the body, the declaration moment, and `@source:`. Re-attributing a saying is the act this
+    project cares about most (`@origin:`, `@attests:`, the stamp's PROVENANCE IS PER BLOCK),
+    and a seal is where a keeper freezes that claim ON PURPOSE rather than having it frozen
+    for them.
 
-    `body` and `source` follow. **`source` IS NOT HERE AS ENTROPY, and saying so was wrong**
-    — it was MEASURED as the lowest-entropy field in the old scheme, near-constant across a
-    pile, and the mint's actual guarantee comes from genesis+ordinal, which cannot collide.
-    It was inherited from `gen_id(ts, body, source)`, which no gate ever ruled on, and carried
-    forward under a new name: the identity work fixed one unexamined default and passed this
-    one through untouched.
+    WHAT IT DOES NOT COVER: `@topic:`, `@act:`, `@path:`, the whole revisable vocabulary. Tags
+    are how a pile is re-interrogated as the keeper's thinking moves; sealing them would make
+    re-filing a tamper event.
 
-    RE-JUSTIFIED, 2026-08-02, because it turned out to be doing a different job well.
-    Including `source` SEALS THE ATTRIBUTION: a block's claim about which mind said it is
-    frozen into its identity at the moment of declaration, so **a saying cannot be silently
-    re-attributed.** You cannot quietly relabel a handed-in block as your own, or your own as
-    an AI's, without `scribe verify` reporting the block as edited in place. That is the axis
-    this project cares about most (§"PROVENANCE IS PER BLOCK" in the stamp; `@origin:`,
-    `@attests:`), and it is worth more than the entropy it fails to provide.
-
-    It survives the obvious objection, too: as a keeper's practice matures `@source:` may
-    converge on one value and lose all discriminating power — but discriminating between
-    blocks was never its real job here. **A uniform value is not an empty one**; "in this
-    period everything was self-sourced" is a true historical claim, and the more the human/AI
-    boundary dissolves in practice, the more worth freezing the claim made at the time.
-
-    DECLARED CONSEQUENCE (§3.8), because it must be stated rather than discovered: `@source:`
-    is the ONLY tag inside the mint. Every other tag — `@topic:`, `@act:`, `@path:`, the whole
-    vocabulary — is freely revisable and does not affect verification. So the tag layer is
-    only PARTLY revisable, and editing `@source:` will honestly report `edited in place since
-    capture`. That is correct: re-attributing a saying is a significant act and should be
-    visible. Pinned by `test_ONLY_source_is_sealed_into_the_mint`.
-
-    WHY `ordinal` IS NOT OPTIONAL — found by a test, not by reasoning. With `--ts` pinned
-    (which capture supports, and tests need), genesis+ts+source+body ALL collapse for two
-    identical utterances and the mint collided again — the original bug, one layer down.
-    The position cannot collapse: a pile is append-only, so the second saying is at index
-    n+1 however identical it is to the first.
-
-    This is gForth's answer (`ebook_gforth-manual.txt:2399`, `:2721`): a word's identity is
-    its execution token — an ADDRESS in the dictionary — and two identical definitions get
-    two different addresses because `HERE` only ever moves forward. Nothing is computed
-    from the content to achieve it, and nothing needs to be checked.
-
-    NAMED LIMIT (§3.8): the ordinal is read at capture and frozen. Delete a block from the
-    middle of a pile and later blocks' ordinals no longer match their position — the mints
-    stay valid (they are never recomputed) but they stop being re-derivable from the file.
-    Forth has the same property and for the same reason: an address stays what it was."""
+    NOT TRUNCATED, ever — unlike the handle, this one has no reason to be short, because
+    nobody types it and nothing resolves against it. It is read by a machine or not at all."""
     return hashlib.sha256(
-        f"{genesis}\x00{ordinal}\x00{ts}\x00{source}\x00{body}".encode("utf-8")).hexdigest()
+        f"{ts}\x00{source}\x00{body}".encode("utf-8")).hexdigest()
 
 
-def gen_handle(mint, taken=None):
-    """@identity:handle — issues a NAME, never an identity. Kept honest by the
-    converse duty: an identity must not do a name's job either. Nobody types 64 hex,
-    and a system with no short handle grows unofficial ones — so the handle is the
-    sanctioned short form, and its shortness is why it may collide and must be resolved.
+def gen_handle(ts, taken=None):
+    """@identity:nominal — issues the identity. There is no longer a second, longer one.
 
-    The name: the shortest prefix of the mint, at least HANDLE_MIN, that no other block
-    in THIS PILE already uses.
+    THE CHANGE, 2026-08-05: the handle used to be the shortest unique PREFIX OF THE MINT, so
+    it was a name for an identity computed elsewhere. The mint is retired, and the handle is
+    now the identity itself — issued at declaration, checked once, never recomputed, and
+    derived from nothing about what the block SAYS.
 
-    This is Knuth's check, at issue time — WEB lets you abbreviate a section name only
-    "after you have given enough text to identify the remainder uniquely", and WEB performs
-    the check. The old `gen_id` took the truncation and left the check behind: it accepted a
-    `taken` set and `make_block` never passed one, so the guard was dead code whose docstring
-    cited §3.8 for a protection the shipped program did not have.
+    ITS COORDINATES ARE THE PILE AND THE NAME. That is the whole model. `#dcea` means a block
+    in THIS pile; across piles it is written `RIPE-LEDGER#dcea`, and the pile is the namespace
+    exactly as a directory is for a filename. The mint bought global uniqueness by folding the
+    pile's genesis into every identity — paying 64 unreadable characters per block, forever, to
+    avoid ever writing down which pile you meant.
 
-    Handles are extended, never overwritten — a longer handle is a declared, visible
-    consequence of a collision, which is row 29's discipline (allow it, declare it) rather
-    than a silent renaming."""
+    WHY THE DECLARED MOMENT AND NOT RANDOMNESS. §3.16 sanctions one way to make a short name:
+    truncate for filing, and CHECK the abbreviation — Knuth's WEB rule, which lets you shorten
+    a section name only after enough text identifies it uniquely, and then performs the check.
+    So the handle is the right-hand digits of the timestamp already printed on the same line,
+    taken from the right and extended leftward until no other block in this pile holds it.
+
+    That buys three things randomness would not:
+      - it is RE-DERIVABLE BY EYE. `#2971` against `2026-08-03T10:59:42.322971` on the same
+        line — a fabricated handle does not match its own timestamp, and no stored digest is
+        needed to notice;
+      - it SORTS, roughly, by when — a free ordering nobody has to maintain;
+      - no random source in a records tool, so a capture is reproducible from its inputs.
+
+    And it is the same answer the gForth build reached from the other side (BRIEF §2, candidate
+    (c)): a short handle derived from `@formed:`, checked for collision at write time. Two
+    implementations, one ruling — which is the point of having only one Charter.
+
+    Collisions EXTEND, never overwrite: a longer handle is the declared, visible consequence
+    of two blocks landing in the same microsecond, not a silent renaming."""
+    digits = re.sub(r"\D", "", ts or "")
     taken = taken or set()
-    for n in range(HANDLE_MIN, len(mint)):
-        cand = mint[:n]
+    for n in range(HANDLE_MIN, len(digits)):
+        cand = digits[-n:]
         if cand not in taken:
             return cand
-    return mint
+    # Every right-anchored run is taken — possible only with a pinned `--ts` repeated past
+    # exhaustion, which the tests do. Declare the overflow rather than return a duplicate.
+    n = 0
+    while f"{digits}-{n}" in taken:
+        n += 1
+    return f"{digits}-{n}"
+
 
 
 # ---------------------------------------------------------------------------
@@ -862,30 +961,31 @@ def loss_check(body, annotations=None):
 # ---------------------------------------------------------------------------
 
 def make_block(raw_body, tags, source, ts=None, annotations=None,
-               genesis=None, taken=None, ordinal=0):
-    """Wire capture -> auditor -> canonical block, minting the identity on the way.
+               genesis=None, taken=None, ordinal=0, seal=False):
+    """Wire capture -> auditor -> canonical block, issuing the identity on the way.
 
-    `genesis`, `ordinal` and `taken` are the three facts a block cannot know about itself:
-    which pile it is being declared into, where in that pile's arrival order it lands, and
-    which handles that pile has already issued. The old code asked for none of them, which
-    is precisely why it could mint the same id twice — the caller HAS all three and simply
-    was not passing them."""
+    `taken` is the one fact a block cannot know about itself: which handles the pile it is
+    landing in has already issued. It is not optional in practice — the old code asked for
+    none of it, which is precisely why it could issue the same id twice.
+
+    `genesis` and `ordinal` are still accepted and are now UNUSED BY IDENTITY (2026-08-05).
+    They stay in the signature because callers pass them and because `gen_genesis` still
+    marks a pile's birth in its stamp; the identity no longer folds either one in. Named
+    here rather than quietly dropped, because a parameter that stopped mattering and looks
+    like it still does is the kind of drift §3.13 is about.
+
+    `seal=True` adds `@sealed:` — integrity, opt-in, a separate value doing a separate job."""
     ts = ts or now_ts()
     audited_body, findings = loss_check(raw_body, annotations=annotations)
-    genesis = genesis or gen_genesis(ts, ".")
-    mint = gen_mint(genesis, ordinal, ts, source, audited_body)
-    handle = gen_handle(mint, taken)
-    # @mint: goes LAST in the tag run, and the placement is a ruling, not a detail.
-    # The strongest objection to storing it at all (§4.6 poverty, raised 2026-08-01): a
-    # pile's whole virtue is being readable in an editor with the tool off, and 64 hex per
-    # block is identity noise in front of the human's eyes — the precedents that say "never
-    # truncate" (Sovereign Pool's sidecar filename, restic's repo path) keep their digests
-    # where nobody reads. That objection is REAL and is answered here rather than dismissed:
-    # the human's eye meets the vocabulary it came for — @topic:, @act:, @source: — and the
-    # hash trails off the end of the line, where the handle at the front is its own prefix
-    # and can be checked at a glance. `scribe keys` excludes it and says so.
-    return Block(id=handle, ts=ts, tags=list(tags) + [(MINT_KEY, mint)],
-                 body=audited_body), findings
+    handle = gen_handle(ts, taken)
+    tags = list(tags)
+    # `@sealed:` goes LAST, and the placement is the ruling `@mint:` used to hold: the eye
+    # meets the vocabulary it came for — @topic:, @act:, @source: — and the digest trails off
+    # the end of the line. The difference is that now the line usually HAS no digest, because
+    # the seal is asked for rather than imposed. `scribe keys` excludes it and says so.
+    if seal:
+        tags.append((SEAL_KEY, gen_seal(audited_body, ts, source)))
+    return Block(id=handle, ts=ts, tags=tags, body=audited_body), findings
 
 
 # ---------------------------------------------------------------------------
@@ -948,95 +1048,83 @@ def duplicate_handles(blocks):
 
 
 # ---------------------------------------------------------------------------
-# The mint audit — is a body still the one it was minted from?
+# The seal audit — is a SEALED block still as it was sealed?
 #
-# The mint is sha256(genesis + ordinal + ts + source + body). Every one of those
-# five inputs is recoverable FROM THE FILE, so the mint can be re-derived and
-# compared. That makes the pile self-auditing at rest, and it is the intra-pile
-# twin of `verify-export` (which does the same for a DERIVED view, via
-# content_fingerprint). Same principle, one level in.
+# REWRITTEN 2026-08-05, and it now answers a narrower question ON PURPOSE. It used
+# to re-derive every block's `@mint:` and report the whole pile. That check covered
+# everything, which sounds like more and was less: it fired on ordinary corrections,
+# it had to invent a deletion-signature search to stay quiet during ordinary edits,
+# and across four real piles and 76 blocks it never once reported an edit. A check
+# nobody chose, which has never caught anything, is not a guarantee — it is a cost.
 #
-# FACT-LANGUAGE, AND IT IS THE WHOLE DESIGN CONSTRAINT — not a wording
-# preference. v1.3.1 ruled the hand-edit a LEGITIMATE SOVEREIGN ACT: the second
-# doorway, chosen per act, history-in-restic instead of history-in-the-pile
-# (§3.1 — the tool binds itself, not the human). A verb that reported that act as
-# `MISMATCH`, `UNVERIFIED`, `MODIFIED`, or at any severity would recast a
-# sanctioned choice as a defect, and a sovereign who feels told off for using his
-# own door stops using it. That is the identical trap the path-sovereignty
-# witness already solved once: `substituted` is a FACT, never a fault — and the
-# tag-validator's `[HELD]` tier is the same move (a witness formally separate
-# from a fault, after Debian's `classification`).
+# So the check is now OPT-IN and the report says what it did NOT check. Blocks with
+# no `@sealed:` are not failures and are not silence: they are `not sealed`, stated
+# in the count, because an instrument that cannot say what it left out reports its
+# blindness as an observation (Charter §3.8 as amended).
 #
-# So: every state below is a statement about WHAT HAPPENED. None is a grading of
-# it. There is no severity anywhere in this verb, and there must never be one.
+# FACT-LANGUAGE, AND IT IS THE WHOLE DESIGN CONSTRAINT — not a wording preference.
+# v1.3.1 ruled the hand-edit a LEGITIMATE SOVEREIGN ACT: the second doorway, chosen
+# per act, history-in-restic instead of history-in-the-pile (§3.1 — the tool binds
+# itself, not the human). A verb that reported that act as `MISMATCH`, `UNVERIFIED`,
+# `MODIFIED`, or at any severity would recast a sanctioned choice as a defect, and a
+# sovereign who feels told off for using his own door stops using it. That is the
+# identical trap the path-sovereignty witness already solved once: `substituted` is a
+# FACT, never a fault — and the tag-validator's `[HELD]` tier is the same move.
 #
-# THE DELETION SIGNATURE, NAMED RATHER THAN LEFT TO LOOK LIKE DAMAGE. `ordinal`
-# is a block's POSITION at capture, frozen. Remove a block from the middle and
-# every later block's ordinal stops matching its position, so a naive check
-# reports the entire tail as changed — a wave of alarm produced by one ordinary
-# act. Cutting a scene from a novel would light up everything after it. So the
-# audit SEARCHES for the shift: if a trailing run all re-derive cleanly at a
-# constant ordinal offset, that is not N edits, it is K blocks removed (or
-# inserted) earlier, and the bodies are untouched. The offset is DEMONSTRATED,
-# not guessed — the tail either verifies at that offset or it does not.
+# So: every state below is a statement about WHAT HAPPENED. None is a grading of it.
+# There is no severity anywhere in this verb, and there must never be one.
+#
+# WHAT WENT WITH THE MINT, recorded because it was good work and its removal is not
+# a judgement on it. `audit_mints` searched for a DELETION SIGNATURE: because the old
+# identity encoded a block's ordinal, removing one block from the middle made every
+# later block re-derive wrong, so the audit looked for a trailing run that verified
+# cleanly at one constant offset and reported "K blocks removed" instead of a wave of
+# false alarm. That machinery was correct, and it existed ONLY to defend the choice to
+# put position inside identity. An identity that is issued and never recomputed cannot
+# drift when its neighbours move, so there is nothing left to compensate for. This is
+# the shape of the whole change: most of what is deleted here is not the feature, it is
+# the scaffolding the feature needed to stay tolerable.
 # ---------------------------------------------------------------------------
 
-AS_CAPTURED = "as captured"
-EDITED_IN_PLACE = "edited in place since capture"
-NO_MINT = "no mint — this check did not run"
+AS_SEALED = "as sealed"
+CHANGED_SINCE_SEAL = "changed since it was sealed"
+NOT_SEALED = "not sealed — this check did not run"
+
+# Kept: `verify` still reads and reports the retired `@mint:` where it finds one, so the
+# 31 blocks carrying one do not become unreadable noise. It cannot RE-DERIVE them — that
+# needed the pile's genesis and each block's frozen ordinal — so it says exactly that,
+# rather than reporting an absence of evidence as evidence.
+LEGACY_MINT = "carries a retired @mint: — not re-derivable, not checked"
 
 
-def rederive_mint(block, genesis, ordinal):
-    """The mint this block would receive if it were declared, now, at `ordinal`."""
-    return gen_mint(genesis, ordinal, block.ts,
-                    _tag_value(block, "source") or "unknown", block.body)
+def rederive_seal(block):
+    """The seal this block would receive if it were sealed, now, from what the file says."""
+    return gen_seal(block.body, block.ts, _tag_value(block, "source") or "unknown")
 
 
-def _states_at(blocks, genesis, offset=0, start=0):
-    """Verdict per block from `start`, re-deriving with position + offset."""
-    out = []
-    for i in range(start, len(blocks)):
-        b = blocks[i]
-        stored = _tag_value(b, MINT_KEY)
-        if not stored:
-            out.append(NO_MINT)
-        elif stored == rederive_mint(b, genesis, i + offset):
-            out.append(AS_CAPTURED)
-        else:
-            out.append(EDITED_IN_PLACE)
-    return out
+def audit_seals(blocks, genesis=None):
+    """Report what the file says happened to each SEALED block.
 
+    Returns {states: [...], sealed: n, unsealed: n, legacy: n, blocks: [...]}.
 
-def audit_mints(blocks, genesis):
-    """Re-derive every block's mint and report what the file says happened.
-
-    Returns {states: [...], shift: None | {at, offset, count}, unminted: n}.
-
-    `shift` is set only when a trailing run of differing blocks ALL re-derive
-    cleanly at one constant ordinal offset — the demonstrated signature of blocks
-    removed from (offset > 0) or inserted into (offset < 0) the pile earlier.
-    When it is set, those blocks' bodies are `as captured`; only their POSITION
-    moved, and position is not something a body can be edited into."""
+    `genesis` is accepted and unused — callers still read it out of the stamp for other
+    reasons, and a signature that quietly changed would break them for no gain. Identity
+    no longer folds it in."""
     real = [b for b in blocks if b.id]
-    states = _states_at(real, genesis, 0)
-    shift = None
-    differing = [i for i, s in enumerate(states) if s == EDITED_IN_PLACE]
-    # A contiguous run reaching the END is the only pattern an ordinal shift can
-    # produce; scattered singles, or a run that stops short, are edits.
-    if differing and differing[-1] == len(states) - 1:
-        at = differing[0]
-        if list(range(at, len(states))) == differing and at > 0:
-            span = len(real) - at
-            for d in list(range(1, at + 1)) + list(range(-1, -span - 1, -1)):
-                if all(s == AS_CAPTURED for s in _states_at(real, genesis, d, at)):
-                    shift = {"at": at, "offset": d, "count": abs(d),
-                             "removed": d > 0, "blocks": real[at:]}
-                    for i in range(at, len(states)):
-                        states[i] = AS_CAPTURED
-                    break
-    return {"states": states, "shift": shift,
-            "unminted": sum(1 for s in states if s == NO_MINT), "blocks": real}
-
+    states = []
+    for b in real:
+        stored = _tag_value(b, SEAL_KEY)
+        if stored:
+            states.append(AS_SEALED if stored == rederive_seal(b) else CHANGED_SINCE_SEAL)
+        elif _tag_value(b, MINT_KEY):
+            states.append(LEGACY_MINT)
+        else:
+            states.append(NOT_SEALED)
+    return {"states": states,
+            "sealed": sum(1 for s in states if s in (AS_SEALED, CHANGED_SINCE_SEAL)),
+            "unsealed": sum(1 for s in states if s == NOT_SEALED),
+            "legacy": sum(1 for s in states if s == LEGACY_MINT),
+            "blocks": real}
 
 # ---------------------------------------------------------------------------
 # Phase 2 — the view-stripper / tangler.
@@ -1052,6 +1140,42 @@ def audit_mints(blocks, genesis):
 def select_blocks(blocks, key, value):
     """All real blocks carrying the tag key:value, in pile (arrival) order."""
     return [b for b in blocks if b.id and (key, value) in b.tags]
+
+
+def definitions_of(blocks, name):
+    """Every block carrying `@name:name`, in ARRIVAL ORDER — oldest first, live one last.
+
+    Arrival order and not most-recent-first, deliberately: a `--ts` can be pinned or
+    backdated, so sorting by timestamp would let a backdated capture silently become the
+    live definition of a name. The pile is append-only and its order is a fact about what
+    happened; a stated moment is a claim. Where the two disagree, this trusts the pile.
+
+    That is the dictionary's rule exactly — gforth resolves a name to the most recently
+    ADMITTED definition, not the one whose source file has the latest date."""
+    return [b for b in blocks if b.id and (NAME_KEY, name) in b.tags]
+
+
+def recall(blocks, name):
+    """What this name finds: the newest definition, or None. Forth's dictionary lookup."""
+    found = definitions_of(blocks, name)
+    return found[-1] if found else None
+
+
+def redefinitions(blocks):
+    """{name: [Block, ...]} for every name defined more than once, arrival order.
+
+    DERIVED, READ-ONLY, computed fresh every call and never written back — the contract
+    `backlinks` has held since v1.1.2. This is the whole reason a redefinition costs the
+    keeper nothing: the record of it is not IN the pile, it is a fact ABOUT the pile, and
+    facts about a pile are recomputed rather than maintained."""
+    out = {}
+    for b in blocks:
+        if not b.id:
+            continue
+        for k, v in b.tags:
+            if k == NAME_KEY:
+                out.setdefault(v, []).append(b)
+    return {n: bs for n, bs in out.items() if len(bs) > 1}
 
 
 # ---------------------------------------------------------------------------
@@ -1550,25 +1674,27 @@ def push_view(view_text, pile_blocks, genesis=None):
             already.append((pb.id, prior[0].lstrip("#")))
             continue
         ts = now_ts()
-        mint = gen_mint(genesis, ordinal, ts, _tag_value(pb, "source") or "unknown", vb.body)
-        handle = gen_handle(mint, taken)
+        handle = gen_handle(ts, taken)
         taken.add(handle)
         ordinal += 1
         # The new block inherits the old block's vocabulary so it appears in every view the
         # old one did — a supersession that fell out of its own topic would be a silent loss.
-        # Its own identity is minted fresh; the old @mint: is never copied or reissued.
+        # Its identity is issued fresh. Neither the retired `@mint:` nor a `@sealed:` is ever
+        # carried across: a seal is a claim about a body, and this is a different body. If the
+        # superseded block was sealed, the new one is sealed only by being sealed again.
         carried = [(k, v) for k, v in pb.tags
-                   if k not in (MINT_KEY, SUPERSEDED_KEY, REPLACES_KEY)]
-        appended.append(Block(id=handle, ts=ts,
-                              tags=carried + [(REPLACES_KEY, f"#{pb.id}"),
-                                              (MINT_KEY, mint)],
-                              body=vb.body))
+                   if k not in (MINT_KEY, SEAL_KEY, SUPERSEDED_KEY, REPLACES_KEY)]
+        new_tags = carried + [(REPLACES_KEY, f"#{pb.id}")]
+        if _tag_value(pb, SEAL_KEY):
+            new_tags.append(
+                (SEAL_KEY, gen_seal(vb.body, ts, _tag_value(pb, "source") or "unknown")))
+        appended.append(Block(id=handle, ts=ts, tags=new_tags, body=vb.body))
         # THE ONE PERMITTED WRITE onto an existing block: a status tag. Its body and its
         # identity are not touched, and this is asserted directly in the guard-set.
         # It is placed BEFORE @mint:, deliberately — a status marker parked after 64 hex
         # characters is a status marker nobody reads, and the entire reason this is written
         # into the file rather than derived is that a tool-off reader must MEET it.
-        pb.tags = _insert_before_mint(pb.tags, (SUPERSEDED_KEY, f"#{handle}"))
+        pb.tags = _insert_before_digest(pb.tags, (SUPERSEDED_KEY, f"#{handle}"))
         superseded.append((pb.id, handle))
 
     return pile_blocks + appended, dict(
@@ -1587,26 +1713,32 @@ def add_tags(blocks, block_id, add=None, remove=None):
     b = resolve_handle(blocks, block_id)
     if b is None:
         return False, None
-    # The identity is not editable vocabulary. Removing @mint: by hand would strip a
-    # block's identity while leaving it looking intact — an absence that does not announce
-    # itself (§3.8). Refused on the write side, where validate_tag's refusals already live.
-    if any(r.split(":", 1)[0] == MINT_KEY for r in remove) or \
-       any(k == MINT_KEY for k, _ in add):
-        raise TagRefused(
-            f"@{MINT_KEY}: is the block's identity, not vocabulary — it is minted once at "
-            f"capture and never edited. Tag something else, or edit the pile by hand if "
-            f"you truly mean to break the identity.")
+    # Neither digest tag is editable vocabulary, and the reasons differ. A hand-written
+    # `@sealed:` would be a seal over a body nobody sealed — a claim of integrity produced
+    # by asserting it. A hand-removed `@mint:` would strip a retired identity while leaving
+    # the block looking intact, an absence that does not announce itself (§3.8). Refused on
+    # the write side, where validate_tag's refusals already live.
+    _frozen = {SEAL_KEY: ("a seal over a body, issued by `capture --seal` at the moment that "
+                          "body was declared. Writing one by hand would be asserting the "
+                          "check rather than performing it"),
+               MINT_KEY: ("a retired identity, issued 2026-08-01..04. It is kept readable "
+                          "and is never edited")}
+    for key, why in _frozen.items():
+        if any(r.split(":", 1)[0] == key for r in remove) or any(k == key for k, _ in add):
+            raise TagRefused(
+                f"@{key}: is not vocabulary — it is {why}. Tag something else, or edit the "
+                f"pile by hand if you truly mean to break it.")
     b.tags = [(k, v) for (k, v) in b.tags if f"{k}:{v}" not in remove]
     for (k, v) in add:
         if (k, v) not in b.tags:
-            # BEFORE @mint:, for the same reason push's status tag goes there — @mint: is
-            # placed last at capture so the human's eye meets the vocabulary first and the
+            # BEFORE any digest, for the same reason push's status tag goes there — a digest
+            # is placed last at capture so the human's eye meets the vocabulary first and the
             # 64 hex trail off the end of the line (§4.6, argued at `make_block`). A plain
             # `.append` put every later-added tag PAST that wall, which quietly undid the
             # ruling for exactly the tags a human adds by hand and therefore most wants to
             # read. Found live 2026-08-02 tagging a real block: @act: — the most load-
             # bearing key on the bench sheet — landed after the hash.
-            b.tags = _insert_before_mint(b.tags, (k, v))
+            b.tags = _insert_before_digest(b.tags, (k, v))
     return True, b
 
 
@@ -1717,6 +1849,9 @@ def cmd_capture(args):
     # Validate BEFORE reducing or writing: a tag the format cannot carry must never
     # reach the file, because nothing downstream re-parses what capture wrote (§3.6).
     tags, notes = _collect_tags(args)
+    if getattr(args, "name", None):
+        notes.extend(validate_tag(NAME_KEY, args.name))
+        tags.append((NAME_KEY, args.name))
     source = args.source or "unknown"
     notes.extend(validate_tag("source", source))
     tags.append(("source", source))
@@ -1742,19 +1877,35 @@ def cmd_capture(args):
             prior = [b for b in parse_pile(existing) if b.id]
             taken = {b.id for b in prior}
             ordinal = len(prior)     # this saying is the (n+1)th declared into this pile
+            # `redefined foo`, in the stream you are already reading. gforth announces a
+            # redefinition AT THE MOMENT OF THE ACT, unprompted, and that placement is the
+            # whole of its value: a redefinition learned about next week is one you have
+            # already built on. Nothing is written to the pile and nothing is asked of you.
+            if getattr(args, "name", None):
+                earlier = definitions_of(prior, args.name)
+                if earlier:
+                    prior_ids = ", ".join(f"#{b.id}" for b in earlier)
+                    sys.stderr.write(
+                        f"  redefined {args.name} — {len(earlier)} earlier definition(s) in "
+                        f"{args.append}: {prior_ids}\n"
+                        f"  They are UNTOUCHED and still resolve by handle; nothing was marked "
+                        f"and nothing is owed. From now on `scribe recall {args.name}` finds "
+                        f"this one.\n")
         else:
             genesis = gen_genesis(args.ts or now_ts(), args.append)
 
     block, findings = make_block(body, tags, source, ts=args.ts, annotations=annotations,
-                                 genesis=genesis, taken=taken, ordinal=ordinal)
+                                 genesis=genesis, taken=taken, ordinal=ordinal,
+                                 seal=getattr(args, "seal", False))
     out = serialize_block(block, tag_form=args.tag_form)
 
     if legacy:
         sys.stderr.write(
             f"  NOTE: {args.append} carries no @genesis: line (a pile born before "
-            f"2026-08-01). Its mints fall back to the pile's PATH alone — still distinct "
-            f"from other piles, but carrying no birth moment. Run `scribe stamp` on a "
-            f"pile you have unstamped, or leave it: nothing is upgraded behind you.\n")
+            f"2026-08-01), so it carries no birth moment. Nothing now depends on that — "
+            f"identity stopped folding the genesis in on 2026-08-05 — so this is a note "
+            f"about the pile's history, not a defect. `scribe stamp` adds one; leaving it "
+            f"costs nothing.\n")
     if len(block.id) > HANDLE_MIN:
         sys.stderr.write(
             f"  NOTE: handle extended to #{block.id} ({len(block.id)} chars) — a shorter "
@@ -1828,9 +1979,11 @@ def _needs_sep(path):
         return False
 
 
-def _report_findings(findings, block):
+def _report_findings(findings, block, verb="captured"):
     # Disclosure to stderr so it never contaminates the canonical stdout (§3.7).
-    sys.stderr.write(f"captured block #{block.id} ({len(block.body.splitlines())} lines)\n")
+    # `verb` because `amend` reuses this and "captured block" would be a small lie about
+    # which act just happened — the pile did not grow.
+    sys.stderr.write(f"{verb} block #{block.id} ({len(block.body.splitlines())} lines)\n")
     if findings:
         sys.stderr.write(f"  {len(findings)} loss marker(s) placed in-band:\n")
         for f in findings:
@@ -1886,19 +2039,19 @@ def cmd_keys(args):
     n_mint = 0
     for b in blocks:
         for k, v in b.tags:
-            # @mint: is structural identity, not vocabulary: one distinct value per block,
-            # so listing it would bury the actual vocabulary under a wall of hashes. It is
-            # EXCLUDED and the exclusion is ANNOUNCED — an undisclosed exclusion is the
-            # real failure, and this report exists to show what the vocabulary has become.
-            if k == MINT_KEY:
+            # A digest is not vocabulary: one distinct value per block, so listing them would
+            # bury the actual vocabulary under a wall of hashes. EXCLUDED and the exclusion is
+            # ANNOUNCED — an undisclosed exclusion is the real failure, and this report exists
+            # to show what the vocabulary has become.
+            if k in (SEAL_KEY, MINT_KEY):
                 n_mint += 1
                 continue
             per_key.setdefault(k, Counter())[v] += 1
     if not per_key:
         sys.stdout.write("(no tags in this pile)\n")
     if n_mint:
-        sys.stdout.write(f"(@{MINT_KEY}: excluded — {n_mint} block identit(ies), one per "
-                         f"block, not vocabulary. `scribe blocks` shows them.)\n")
+        sys.stdout.write(f"(@{SEAL_KEY}:/@{MINT_KEY}: excluded — {n_mint} digest(s), at most "
+                         f"one per block, not vocabulary. `scribe blocks` shows them.)\n")
     for k in sorted(per_key, key=lambda k: (-sum(per_key[k].values()), k)):
         vals = per_key[k]
         retired = f"   [RETIRED — replaced by @{RETIRED_KEYS[k]}:]" if k in RETIRED_KEYS else ""
@@ -1989,91 +2142,86 @@ def cmd_backlinks(args):
 
 
 def cmd_verify(args):
-    """`scribe verify PILE [PILE...]` — is each block still the one its @mint: was issued
-    for? The mint covers the body, the timestamp and @source:, so this speaks to all three.
+    """`scribe verify PILE [PILE...]` — is each SEALED block still as it was sealed?
 
-    Read-only, and REPORTS IN FACT-LANGUAGE ONLY. An edited body is not a fault: v1.3.1
+    A seal covers the body, the declaration moment and `@source:`, so this speaks to all
+    three. It covers nothing else, and it exists only where someone asked for it.
+
+    Read-only, and REPORTS IN FACT-LANGUAGE ONLY. A changed body is not a fault: v1.3.1
     ruled the hand-edit a sanctioned doorway, so this verb says what happened and never
     grades it. There is no severity here and there must never be one.
 
-    EXIT CODES, and the distinction is §3.8's: `0` means every block's state was
-    DETERMINED — whether as captured or edited in place, both are answers. `2` means the
-    check COULD NOT RUN somewhere (a block with no `@mint:`), because a check that did not
-    run must never be reported the same way as one that passed."""
+    EXIT CODES. `0` unless a SEALED block changed; `2` then. Nothing else sets it, and the
+    two obvious candidates are refused for the same reason:
+
+      - an UNSEALED block is not an unanswered question, it is a question nobody asked;
+      - a LEGACY `@mint:` block is a closed historical set that no future act can shrink, so
+        a nonzero exit for it would fire on every run of every existing pile, forever.
+
+    That second one is §3.7-as-amended turned on this verb itself: an alarm that always fires
+    defeats disclosure while satisfying it, and teaches the reader to stop reading exit codes.
+    The condition is REPORTED IN FULL below; it simply does not colour the exit."""
     undetermined = 0
     for path in args.pile:
         with open(path, "r", encoding="utf-8") as fh:
             text = fh.read()
         genesis, declared = genesis_of(text, path)
-        rep = audit_mints(parse_pile(text), genesis)
+        rep = audit_seals(parse_pile(text), genesis)
         blocks, states = rep["blocks"], rep["states"]
-        n_edit = sum(1 for s in states if s == EDITED_IN_PLACE)
-        n_kept = sum(1 for s in states if s == AS_CAPTURED)
+        n_changed = sum(1 for s in states if s == CHANGED_SINCE_SEAL)
+        n_kept = sum(1 for s in states if s == AS_SEALED)
         sys.stdout.write(
-            f"{path} — {len(blocks)} block(s): {n_kept} as captured, "
-            f"{n_edit} edited in place, {rep['unminted']} with no mint"
-            f"{'' if declared else '  (no @genesis: line — a pile born before 2026-08-01)'}\n")
+            f"{path} — {len(blocks)} block(s): {n_kept} as sealed, "
+            f"{n_changed} changed since sealing, {rep['unsealed']} not sealed"
+            f"{f', {rep["legacy"]} legacy' if rep["legacy"] else ''}\n")
 
-        if rep["shift"]:
-            sh = rep["shift"]
-            verb = "removed from" if sh["removed"] else "inserted into"
-            sys.stdout.write(
-                f"  POSITION SHIFT, not edits — and this is the ordinary shape of "
-                f"{'cutting' if sh['removed'] else 'adding'} material.\n"
-                f"    From #{sh['blocks'][0].id} onward, every block re-derives exactly at a "
-                f"constant offset of {sh['offset']}, which is what {sh['count']} block(s) "
-                f"{verb} the pile earlier does to the position each later block was minted at.\n"
-                f"    Their BODIES ARE AS CAPTURED — only their position moved, and a position "
-                f"is not something a body can be edited into. {len(sh['blocks'])} block(s) are "
-                f"reported as captured above on that basis.\n")
-
-        # WHOLLY-LEGACY PILES ARE SUMMARISED, NOT ENUMERATED — and the choice is declared.
-        # Naming 43 unminted blocks one by one in a pile that predates v1.3.0 entirely is
-        # noise that buries the one line worth reading (§4.6). But a block with no mint in a
-        # pile that HAS them is the interesting case — typed straight into the file — so
-        # that one is always named. The rule: enumerate the anomaly, summarise the norm,
-        # and say which was done. The count is stated either way, so nothing is hidden.
-        # Summarise when the unminted are the MAJORITY (the norm here), enumerate when
-        # they are the minority (the anomaly worth naming). An all-or-nothing rule was
-        # wrong: a TRANSITIONAL pile — 43 legacy blocks and 5 new ones, which is what the
-        # sovereign's real ledger looks like today — is the common case, and it printed 86
-        # lines while calling them "the exception".
-        bulk_legacy = rep["unminted"] > max(5, len(blocks) // 2)
+        # ENUMERATE THE ANOMALY, SUMMARISE THE NORM, AND SAY WHICH WAS DONE. Naming every
+        # unsealed block in a pile where sealing is rare is noise that buries the one line
+        # worth reading (§4.6) — and under an OPT-IN seal, unsealed is the norm nearly
+        # everywhere. So unsealed blocks are never listed; the count is the whole of it.
+        # A LEGACY block is not listed either, and that is a change of mind made once the
+        # output existed: naming nine of them cost eighteen lines that said nothing the
+        # count had not, and there is no per-block act to take from reading them. Where they
+        # are is a `grep`, and the line below says which one.
         for b, s in zip(blocks, states):
-            if s == AS_CAPTURED or (s == NO_MINT and bulk_legacy):
+            if s != CHANGED_SINCE_SEAL:
                 continue
             first = (b.body.splitlines() or [""])[0][:56]
             sys.stdout.write(f"    #{b.id}  {b.ts}  {s}\n      {first!r}\n")
-        undetermined += rep["unminted"]
+        undetermined += n_changed
 
-        if n_edit:
+        if n_changed:
             sys.stdout.write(
-                "  'Edited in place' is a STATEMENT, not a complaint: it is the second doorway\n"
-                "  working as ruled — the block was corrected in the file, keeping that history\n"
-                "  in your backups rather than in the pile. Precisely, it means the block is not\n"
-                "  the one its @mint: was issued for; the mint covers the BODY, the TIMESTAMP and\n"
-                "  @source:, so a change to any of the three says so here. What it cannot tell\n"
-                "  you is WHAT changed — no earlier text is kept in the pile, by design, so only\n"
-                "  restic or git holds the before.\n")
-        if rep["unminted"] and bulk_legacy:
-            every = rep["unminted"] == len(blocks)
+                "  'Changed since it was sealed' is a STATEMENT, not a complaint: it is the\n"
+                "  second doorway working as ruled — the block was corrected in the file, keeping\n"
+                "  that history in your backups rather than in the pile. Precisely, it means the\n"
+                "  block is not the one its @sealed: was issued for; a seal covers the BODY, the\n"
+                "  TIMESTAMP and @source:, so a change to any of the three says so here. What it\n"
+                "  cannot tell you is WHAT changed — no earlier text is kept in the pile, by\n"
+                "  design, so only restic or git holds the before.\n")
+        if rep["unsealed"]:
             sys.stdout.write(
-                f"  {'No block here carries' if every else 'Most blocks here carry no'} @mint: — "
-                f"{rep['unminted']} of {len(blocks)} predate the identity\n"
-                "  split (v1.3.0), so THE CHECK DID NOT RUN for them. That is not a clean result\n"
-                "  and is deliberately not reported as one; nothing is wrong with the pile and\n"
-                "  nothing is upgraded behind you. Blocks captured from now on carry mints and\n"
-                "  are checked. NOT LISTED ONE BY ONE — here they are the norm, not the anomaly,\n"
-                "  and naming each would bury the line worth reading. The count is the whole of\n"
-                "  it; `scribe duplicates` lists them individually if you want them.\n")
-        elif rep["unminted"]:
+                f"  {rep['unsealed']} of {len(blocks)} block(s) carry no @sealed:, so THE CHECK DID\n"
+                "  NOT RUN for them. That is the ordinary condition and not a gap: sealing is\n"
+                "  opt-in (`scribe capture --seal`), for the blocks where you want a body frozen\n"
+                "  against later change. Said out loud rather than left to the silence, because a\n"
+                "  check that reports only what it looked at reads as a clean bill for the rest.\n")
+        if rep["legacy"]:
             sys.stdout.write(
-                f"  {rep['unminted']} block(s) above carry no @mint: in a pile that otherwise has\n"
-                "  them — typed straight into the file, or moved in from elsewhere. Named rather\n"
-                "  than summarised, because in this pile that is the exception. THE CHECK DID NOT\n"
-                "  RUN for them, and a check that did not run must never look like one that\n"
-                "  passed.\n")
+                f"  {rep['legacy']} block(s) carry the RETIRED @mint: (issued 2026-08-01..04) and no\n"
+                "  seal. A mint folded the pile's genesis and the block's frozen position into its\n"
+                "  value, so it cannot be re-derived from what the file alone says, and this verb\n"
+                "  does not try. NOT LISTED — `grep -n \'@mint:\' " + path + "` locates them, and\n"
+                "  reading them one by one teaches nothing the count has not already said. To bring\n"
+                "  one under the current check, seal it; to leave it, leave it — the @mint: stays\n"
+                "  readable and means what it meant. It is simply no longer something this tool\n"
+                "  can speak to.\n")
+        if not declared:
+            sys.stdout.write(
+                "  (no @genesis: line — a pile born before 2026-08-01. Nothing now depends on it;\n"
+                "  identity stopped folding the genesis in on 2026-08-05.)\n")
     return EXIT_FINDINGS if undetermined else 0
+
 
 
 def cmd_duplicates(args):
@@ -2290,6 +2438,215 @@ def cmd_tag(args):
     return 0
 
 
+def cmd_recall(args):
+    """`scribe recall NAME PILE [--all]` — what does this name find?
+
+    FORTH'S DICTIONARY LOOKUP, and the verb is named for the act rather than the structure.
+    A name resolves to its most recently ADMITTED definition; the earlier ones are still in
+    the pile, still addressable, and were never marked. `--all` shows the lineage, which is
+    what `words` would show you about a shadowed definition.
+
+    Read-only. It computes; it never writes. There is no chain in the pile to keep in step
+    with, which is the whole point — a redefinition costs the keeper nothing at all."""
+    text_in = _read_input(args.pile)
+    blocks = parse_pile(text_in)
+    found = definitions_of(blocks, args.name)
+    if not found:
+        sys.stderr.write(f"no block named @{NAME_KEY}:{args.name} in {args.pile}\n")
+        defined = sorted({v for b in blocks for k, v in b.tags if k == NAME_KEY})
+        if defined:
+            sys.stderr.write(f"  names in this pile: {' '.join(defined)}\n")
+        else:
+            sys.stderr.write(
+                f"  this pile carries no @{NAME_KEY}: tags at all. A name is opt-in: capture "
+                f"with --name to give a saying one, and say it again under the same name "
+                f"whenever it improves.\n")
+        _announce_malformed(text_in, args.pile)
+        return 1
+
+    shown = found if args.all else found[-1:]
+    sys.stdout.write("".join(serialize_block(b, tag_form=args.tag_form) + "\n"
+                             for b in shown))
+    if args.all:
+        sys.stderr.write(
+            f"{len(found)} definition(s) of {args.name}, arrival order — the last is what "
+            f"the name finds.\n")
+    elif len(found) > 1:
+        # §3.8: an instrument must be able to say what it did not show. Silently handing
+        # back the live definition would make a name look like it had only ever had one.
+        earlier = ", ".join(f"#{b.id}" for b in found[:-1])
+        sys.stderr.write(
+            f"#{found[-1].id} — the live definition of {args.name}.\n"
+            f"  NOT SHOWN: {len(found) - 1} earlier definition(s) still in this pile "
+            f"({earlier}). They are untouched and unmarked; `--all` shows them.\n")
+    else:
+        sys.stderr.write(f"#{found[-1].id} — the only definition of {args.name}.\n")
+    bad = _announce_malformed(text_in, args.pile)
+    return EXIT_FINDINGS if bad else 0
+
+
+def cmd_names(args):
+    """`scribe names PILE [PILE...]` — every name, and which of its definitions is live.
+
+    THE `redefined` REPORT, DERIVED. Nothing here is stored anywhere: it is recomputed from
+    the pile on every call, exactly as `backlinks` is, and for the same stated reason —
+    "back-references are derived, never hand-written". A pile that recorded its own
+    redefinitions would be maintaining a chain, and maintaining a chain is the paperwork
+    this whole mechanism exists to abolish."""
+    rc = 0
+    for path in args.pile:
+        text_in = _read_input(path)
+        blocks = parse_pile(text_in)
+        names = {}
+        for b in blocks:
+            if not b.id:
+                continue
+            for k, v in b.tags:
+                if k == NAME_KEY:
+                    names.setdefault(v, []).append(b)
+        if not names:
+            sys.stdout.write(f"{path} — no named blocks.\n")
+            continue
+        redefined = {n: bs for n, bs in names.items() if len(bs) > 1}
+        sys.stdout.write(
+            f"{path} — {len(names)} name(s), {len(redefined)} redefined\n")
+        for n in sorted(names):
+            bs = names[n]
+            live = bs[-1]
+            if len(bs) == 1:
+                sys.stdout.write(f"  {n}  -> #{live.id}\n")
+            else:
+                older = " ".join(f"#{b.id}" for b in bs[:-1])
+                sys.stdout.write(
+                    f"  {n}  -> #{live.id}   ({len(bs)} definitions; earlier: {older})\n")
+        if redefined:
+            sys.stdout.write(
+                "  A redefined name is not a problem and nothing is owed on it. The earlier\n"
+                "  blocks are untouched, unmarked, and still resolve by handle — what moved\n"
+                "  is what the NAME finds. This listing is computed fresh and never written\n"
+                "  back, so there is no chain here to keep in step.\n")
+        rc = EXIT_FINDINGS if _announce_malformed(text_in, path) else rc
+    return rc
+
+
+def cmd_amend(args):
+    """`scribe amend #id PILE [--from FILE]` — correct a block's body IN PLACE.
+
+    THE DOORWAY THAT WAS MISSING, and its absence is what made the pile feel like it was
+    corralling you. scribe modelled ONE kind of change and called it `push`: append a new
+    block, mark the old superseded. That is right for a REVISION — the thinking moved, and
+    a new saying deserves its own identity and its own place in the arrival order.
+
+    But there are two kinds of change and the tool modelled one:
+
+      REVISION   the thinking moved. A new saying.  -> `push`: append + supersede.
+      CORRECTION the saying is the same and was badly expressed. A word is wrong; you
+                 wrote it five minutes ago.         -> `amend`: in place. Nothing appended,
+                 nothing superseded, nothing reported. NOTHING HAPPENED.
+
+    Before 2026-08-05 there was no third doorway and the missing one was the common case, so
+    a typo either grew the pile by a whole block or drove you out of the tool to a text
+    editor. It could not exist while identity contained the body: every correction would have
+    been an identity event, so the tool would have had to either change the block's identity
+    (breaking every pointer to it) or report it forever as edited. **`amend` is not a feature
+    added on top of the identity change. It is the identity change, seen from the user's
+    side** — the only thing that had to be true first was that a body is not part of what a
+    block IS.
+
+    THE GUARD, AND IT IS A REFUSAL, NOT A WARNING. `amend` refuses if any block in this pile
+    — or in any pile named with `--also` — points at the target — `@ref:`, `@replaces:`, `@overrules:`, the whole pointer family.
+    The wording under a pointer is exactly what `push` exists to protect: someone wrote
+    "@ref:#a4f2" about text that said something, and silently changing that text rewrites
+    their citation. **If something points at it, it is no longer only yours to correct, and
+    it wants a revision.** The refusal names what points at it, so the choice is informed.
+
+    IT ALSO REFUSES A SEALED BLOCK, and that is what makes `--seal` mean anything. A seal is
+    a declaration that this body is to be held as it stands. Amending under a seal would
+    either break the seal silently or quietly reissue it — the first is damage, the second
+    is a tool forging a claim on your behalf. Break the seal by hand if you mean to.
+
+    AND IT RECORDS NOTHING. No `@amended:`, no counter, no trace. That is a ruling, not an
+    oversight, and it is the gForth build's answer adopted here: A TYPO IS NOT AN EVENT. A
+    pile that logged every corrected word would be back to accumulating, which is the thing
+    that made the old pile feel greedy. What the pile is FOR is sayings; the history of how
+    a sentence reached its wording lives in restic and git, which is where §3.1 has always
+    put the second doorway's history."""
+    with open(args.pile, "r", encoding="utf-8") as fh:
+        pile_text = fh.read()
+    _refuse_if_malformed(pile_text, args.pile)
+    blocks = parse_pile(pile_text)
+    handle = args.id.lstrip("#")
+    try:
+        target = resolve_handle(blocks, handle)
+    except AmbiguousHandle as e:
+        sys.stderr.write(f"REFUSED: nothing written to {args.pile}. {e}\n")
+        return 1
+    if target is None:
+        sys.stderr.write(f"no block with id #{handle} in {args.pile}\n")
+        return 1
+
+    if _tag_value(target, SEAL_KEY):
+        sys.stderr.write(
+            f"REFUSED: #{target.id} carries @sealed: — it was declared as a body to be held\n"
+            f"  as it stands, and amending it would either break that seal or forge a new\n"
+            f"  one in your name. Neither is this tool's to do.\n"
+            f"  If the saying moved, `scribe push` it. If the seal was a mistake, remove it\n"
+            f"  by hand — that is your doorway and it stays open.\n")
+        return 1
+
+    # RULED 2026-08-05. The first build checked THIS pile only and said so, which satisfies
+    # §3.8 and still leaves a citation in another pile silently rewritable. `--also` widens
+    # the check to piles you name. It is opt-in because a tool that hunted for piles on its
+    # own would be guessing at which ones are related, and a guess here is a wrong refusal —
+    # the most expensive kind, because it sends you to `push` for a typo.
+    piles = {os.path.abspath(args.pile): blocks}
+    for other in (getattr(args, "also", None) or []):
+        other_abs = os.path.abspath(other)
+        if other_abs in piles:
+            continue
+        piles[other_abs] = parse_pile(_read_input(other))
+    back = compute_backlinks(piles)
+    pointers = [p for (pile_path, tid), ps in back.items()
+                if tid == target.id and pile_path == os.path.abspath(args.pile)
+                for p in ps]
+    if pointers:
+        sys.stderr.write(
+            f"REFUSED: #{target.id} is pointed at by {len(pointers)} block(s) in this pile:\n")
+        for fp, key, from_id, _ts in pointers:
+            where = "" if os.path.abspath(fp) == os.path.abspath(args.pile) \
+                    else f"   [in {os.path.basename(fp)}]"
+            sys.stderr.write(f"    #{from_id}  @{key}:#{target.id}{where}\n")
+        sys.stderr.write(
+            "  Someone wrote that pointer ABOUT the wording that is there now, so changing it\n"
+            "  silently rewrites their citation. This is exactly the case `push` exists for:\n"
+            f"  `scribe push` appends the new wording and marks #{target.id} superseded, so the\n"
+            "  pointer still resolves to what it was written about and the reader is told.\n"
+            f"  (Checked: {len(piles)} pile(s) — {', '.join(sorted(os.path.basename(p) for p in piles))}.\n"
+            "  A pointer from a pile not named here is NOT seen. Pass `--also PILE` to widen\n"
+            "  the check; scribe will not go looking for related piles on its own.)\n")
+        return 1
+
+    new_body = _read_input(args.source_file).rstrip("\n")
+    if not new_body.strip():
+        sys.stderr.write("REFUSED: the replacement body is empty. An amendment that empties a\n"
+                         "  block is a deletion, and deletion is a hand-edit, not a verb here.\n")
+        return 1
+    if new_body == target.body:
+        sys.stderr.write(f"#{target.id} unchanged — the replacement is byte-identical. "
+                         f"Nothing written.\n")
+        return 0
+
+    audited, findings = loss_check(new_body)
+    old_first = (target.body.splitlines() or [""])[0][:64]
+    target.body = audited
+    _atomic_write(args.pile, serialize_pile(blocks, tag_form=args.tag_form))
+    sys.stderr.write(
+        f"#{target.id} amended in place. Identity unchanged, nothing appended, nothing "
+        f"recorded.\n  was: {old_first!r}\n  now: {(audited.splitlines() or [''])[0][:64]!r}\n")
+    _report_findings(findings, target, verb="amended")
+    return 0
+
+
 def cmd_doctor(args):
     """Disclose the frozen artifact and its runtime dependency (§3.7 / §4.4): the
     scribe.py SHA-256 (compare against PROVENANCE.md), the Python version, and the
@@ -2333,9 +2690,52 @@ def build_parser():
     c.add_argument("--no-stamp", action="store_true",
                    help="do not write the reading-instructions header when --append "
                         "creates a new pile")
+    c.add_argument("--name", metavar="NAME",
+                   help="give this saying a NAME you can say again. Capturing the same "
+                        "--name later redefines it: the name follows you to the new block, "
+                        "the earlier ones are untouched and unmarked, and nothing is "
+                        "appended or owed. `scribe recall NAME` finds the live one")
+    c.add_argument("--seal", action="store_true",
+                   help="add @sealed: — freeze this body, timestamp and @source: so "
+                        "`scribe verify` can say whether they changed. Opt-in, per block, "
+                        "for the ones you want held; ordinary blocks stay correctable")
     c.add_argument("--tag-form", choices=["repeated", "comma"], default="repeated")
     c.add_argument("--ts", help="override timestamp (testing)")
     c.set_defaults(func=cmd_capture)
+
+    am = sub.add_parser("amend",
+                        help="correct a block's body IN PLACE — no new block, no "
+                             "supersession, nothing recorded. For a typo, not a revision; "
+                             "refuses if anything points at the block, or if it is sealed")
+    # ORDER MATCHES `tag`, its closest sibling: both edit one block, in place, by id. The
+    # first draft here took (pile, id) — the order `push` and `verify` use, because those
+    # act on a WHOLE pile — and two verbs that do the same kind of thing disagreeing about
+    # their own arguments is the sort of drift that gets discovered by a lost edit.
+    am.add_argument("id", help="block id, e.g. 2644 or #2644")
+    am.add_argument("pile")
+    am.add_argument("--also", action="append", metavar="PILE",
+                    help="also check this pile for pointers at the block (repeatable). "
+                         "Without it the check sees only PILE, and says so")
+    am.add_argument("--from", dest="source_file", default="-", metavar="FILE",
+                    help="read the replacement body from FILE (default: stdin)")
+    am.add_argument("--tag-form", choices=["repeated", "comma"], default="repeated")
+    am.set_defaults(func=cmd_amend)
+
+    rc = sub.add_parser("recall",
+                        help="what does this name find? — the newest block carrying "
+                             "@name:NAME. Forth's dictionary lookup; read-only")
+    rc.add_argument("name")
+    rc.add_argument("pile")
+    rc.add_argument("--all", action="store_true",
+                    help="show every definition of the name, arrival order (the last is live)")
+    rc.add_argument("--tag-form", choices=["repeated", "comma"], default="repeated")
+    rc.set_defaults(func=cmd_recall)
+
+    nm = sub.add_parser("names",
+                        help="every @name: in the pile and which definition is live — "
+                             "derived fresh, never written back")
+    nm.add_argument("pile", nargs="+")
+    nm.set_defaults(func=cmd_names)
 
     k = sub.add_parser("check", help="run the loss auditor on text (no capture)")
     k.add_argument("file", nargs="?", default="-")

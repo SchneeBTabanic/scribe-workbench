@@ -608,6 +608,20 @@ downstream of §3.16, which is why it is numbered second.
 
 | | what it is | where it lives | who points at it |
 |---|---|---|---|
+> **SUPERSEDED 2026-08-05 (scribe v1.4.0), and the table below is kept as the record of what
+> was believed rather than corrected in place.** `@mint:` is retired. It restated four facts
+> the header already stated readably — which pile, which position, when, and `@source:` — in
+> 64 characters nobody can read, and by also covering the **body** it fused *identity* with
+> *integrity*, which made every corrected word an identity event. Evidence first: `verify`
+> across all four real piles, **76 blocks, `edited in place` reported zero times**, 45 of
+> them carrying no mint at all.
+> 
+> **What holds now:** the `#id` **is** the identity — issued at capture from the declaring
+> moment, checked unique in the pile, never recomputed, derived from nothing about the
+> content. Its coordinates are *the pile and the name* (`PILE#id` across piles). Integrity
+> moved out to an **opt-in** `@sealed:`. A name you can say again is `@name:`, after Forth's
+> dictionary. See `PROVENANCE.md` v1.4.0 and Charter §0.1.
+
 | **handle** `#a8eb` | the **name** — shortest prefix of the mint that no other block in **this pile** holds | the `#id` at the front of the header | every `@ref:`/`@overrules:`/`@superseded:`-style tag value on this sheet |
 | **mint** `@mint:` | the **identity** — whole SHA-256, never truncated, frozen at capture | an ordinary tag, **last** in the tag run | nothing |
 

@@ -48,7 +48,9 @@ sheet is vocabulary you write. These three are written by scribe:
 
 | key | who writes it | what to do about it |
 |---|---|---|
-| `@mint:` | scribe, once, at capture | **Never touch it.** `scribe tag --tag mint:…` is refused; `scribe keys` leaves it out and says so. It is the block's identity, not a description of it. |
+| `@name:` | **you**, optionally | A name you can **say again**. Capture the same `@name:` later and the name follows you to the new block; the earlier ones are untouched, unmarked, and still resolve by `#id`. `scribe recall NAME PILE` finds the live one. No shape discipline — unlike `@act:`/`@path:`, a name compares with nothing, so write what you like. |
+| `@sealed:` | scribe, on `capture --seal` | **Never touch it.** Opt-in integrity over the body, the moment and `@source:`. `scribe tag --tag sealed:…` is refused — writing one by hand would assert the check instead of performing it. `scribe keys` leaves it out and says so. |
+| `@mint:` | *retired 2026-08-05* | A block's identity between 2026-08-01 and 08-04. Kept readable on the blocks that carry one, reported as *legacy* by `scribe verify`, **never upgraded behind you**, and never yours to edit. |
 | `@superseded:#new` | `scribe push`, onto the **old** block | Read it: it means a later block replaced this one. You may still write it by hand for a supersession `push` had no part in. |
 | `@replaces:#old` | `scribe push`, onto the **new** block | Same — read it, and write it by hand when you are recording the relation yourself. |
 
@@ -238,7 +240,7 @@ names, and only one of them belongs in a tag value:
 | on the header | what it is | do you type it? |
 |---|---|---|
 | `#c98b` at the front | the **handle** — short, and unique *within its pile* | **yes** — this is what `@ref:` and every key below point at |
-| `@mint:c98b4f…` at the end | the **identity** — the whole 64-hex fingerprint | **no** — nothing points at it, and `scribe tag` refuses to write it |
+| `@sealed:c98b4f…` at the end, *where one appears* | **integrity, not identity** — opt-in, over the body, the moment and `@source:` | **no** — nothing points at it, and `scribe tag` refuses to write it |
 
 Why the split: a name has to be short enough to type, which makes it short enough to collide;
 an identity has to be long enough that it never does. One token was doing both jobs, and two
@@ -255,7 +257,7 @@ landed an edit on the wrong block, silently. The fix was two fields, not a longe
   year still lands.
 - **A truncated pointer is resolved, not guessed.** `@ref:c9` will resolve if `c9` names
   exactly one block; if it names two, the verb refuses and lists them. Prefer the full handle.
-- **Piles started before 2026-08-01** have handles but no mints. They keep working and are
+- **Piles started before 2026-08-01** have no `@genesis:` line. They keep working and are
   never upgraded — `scribe duplicates pile.txt` tells you whether any of them collide, and if
   two legacy blocks share a name, whether they are one saying or two is **yours** to rule; the
   tool will not decide it and will not repair it.
@@ -291,7 +293,7 @@ says it's stale beats no note at all.
 > is this sheet's, quoted in `scribe.py` itself: the mark goes where the person who needs it will
 > be standing. It is *written into the file* rather than derived by `backlinks`, deliberately —
 > derived would have been purer, and would have meant a reader with the tool switched off met no
-> mark at all on the stale block. Also new: scribe places it **before** `@mint:` in the tag run,
+> mark at all on the stale block. Also: scribe places it **before** any digest in the tag run,
 > because a warning parked behind sixty-four characters of hex is a warning nobody reads.
 
 **`@yields:#id`** — if this block and that one ever contradict each other, that one wins. Decided
@@ -426,11 +428,11 @@ A worked block, using nothing exotic (one line, however long — a header wrappe
 line is not a header, and its remainder becomes body text):
 
 ```
-@@ #c98b 2026-07-07T19:48:03.112904 @act:protect-against-bit-rot @path:toward-integrity-over-convenience @aspect:manifested @topic:nas @source:gemini @origin:ai @attests:self @mint:c98b4f1a…64 hex…
+@@ #2904 2026-07-07T19:48:03.112904 @act:protect-against-bit-rot @path:toward-integrity-over-convenience @aspect:manifested @topic:nas @source:gemini @origin:ai @attests:self
 ZFS vs ext4: use ZFS on the NAS for checksums and snapshots.
 ```
 
-Everything up to `@attests:self` is yours. The trailing `@mint:` is scribe's, written once at
+Every tag there is yours. The `#2904` at the front is scribe's, issued once at
 capture; it sits last so your eye meets the vocabulary first and the hash runs off the end.
 
 ---
@@ -453,11 +455,11 @@ scribe tag c98b pile.txt --tag aspect:manifested --remove aspect:manifesting
 
 `--topic` and `--source` still work; `--tag` is simply the door to everything else. `--state` also
 still works but announces that it writes a **retired** key — write `--tag aspect:…` instead. One
-key the door does not open: `--tag mint:…` is **refused** on both verbs, because that is the
+key the door does not open: `--tag sealed:…` and `--tag mint:…` are **refused** on both verbs, because that is the
 block's identity and not vocabulary.
 
 *(This replaces the old hand-typing workaround. Hand-editing the tag run in xed is still perfectly
-safe if you prefer it — the `#id`, the timestamp and `@mint:` are the three things never to touch —
+safe if you prefer it — the `#id`, the timestamp and any digest are the three things never to touch —
 but it is no longer the only route, and it was the route that tripped the space bug.)*
 
 **Then check, in this order:**
@@ -473,7 +475,7 @@ but it is no longer the only route, and it was the route that tripped the space 
    subject. This is the honest test of whether your paths are alive: if two blocks reach the same
    way, they gather; if every path is unique, they don't, and that tells you something too.
 5. `scribe verify pile.txt` — **which blocks are still exactly as captured, and which you
-   edited by hand afterwards.** Useful on this sheet specifically because `@mint:` covers the
+   edited by hand afterwards.** Useful on this sheet specifically because a `@sealed:` covers the
    body, the timestamp *and* `@source:` — so if you hand-edit a `@source:` value the block will
    report `edited in place since capture`, correctly. It reports in fact-language only: a
    hand-edit is a sanctioned act, never a fault, and this verb carries no severities.
@@ -481,7 +483,7 @@ but it is no longer the only route, and it was the route that tripped the space 
    On a pile made by v1.3.0 or later this always comes back empty, because handles are checked as
    they are issued. On an older pile it is how you find out whether two blocks answer to the same
    name — which matters most for the pointer keys above, since a `@ref:` into an ambiguous handle
-   is a pointer nobody can follow. It reports and never repairs: re-minting would break every tag
+   is a pointer nobody can follow. It reports and never repairs: reissuing an id would break every tag
    already pointing in.
 
 ---

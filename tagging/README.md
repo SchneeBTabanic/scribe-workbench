@@ -8,12 +8,13 @@ and it lives here.
 **Three exceptions, added 2026-08-01/02 and small enough to state here in full.** scribe now
 writes three tags of its own, and one of them it will not let you write:
 
-- **`@mint:`** — a block's identity, minted once at capture and never recomputed. `scribe tag`
-  **refuses** it, `scribe keys` excludes it with a notice, and it sits last on the header so
-  your vocabulary stays on the readable side of the hash. It is not a description of a block;
-  it is *which block this is*. The short `#id` at the front is a separate thing — the **handle**,
-  a name — and that is what every `@ref:`-style tag points at. This is not a registry: nothing
-  central knows about any block; each pile carries its own `@genesis:` in its stamp and the
+- **`@sealed:`** — *opt-in* integrity, written only by `capture --seal`, over the body, the
+  declaring moment and `@source:`. `scribe tag` **refuses** it (writing one by hand would assert
+  the check rather than perform it), `scribe keys` excludes it with a notice, and it sits last
+  on the header so your vocabulary stays on the readable side of the hash. **It is not an
+  identity.** *Which block this is* is the `#id` at the front, and that is what every `@ref:`-style
+  tag points at. This is not a registry: nothing central knows about any block; each pile carries
+  its own `@genesis:` in its stamp and the
   distinctness falls out of that.
 - **`@superseded:`** and **`@replaces:`** — still ordinary vocabulary you may write by hand, but
   `scribe push` now writes them too, as the two halves of one supersession, because `push`

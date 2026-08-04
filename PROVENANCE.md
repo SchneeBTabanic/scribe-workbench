@@ -1,6 +1,177 @@
 # PROVENANCE — Scribe's Workbench
 
-## v1.3.4 — "@source: is an attribution seal, not entropy — and it is the only sealed tag" (2026-08-02) — CURRENT
+## v1.4.0 — "identity stops being an integrity check, and a name can be said again" (2026-08-05) — CURRENT
+
+**The largest change since v1.0.0, and the only one that removes a guarantee.** Read this
+entry before the ones below it: several of them argue carefully for a design this version
+retires. Those arguments are kept exactly as written — they were true when made, and a
+changelog that edits its own history is the thing §5.8 exists to prevent.
+
+### 1. `@mint:` is retired. Identity is `#id` alone.
+
+Until now a block's identity was `sha256(genesis + ordinal + ts + source + body)` and the
+handle was its checked prefix. **Every ingredient except `body` was already stated, readably,
+on the same header line** — genesis is the file you are reading, ordinal is the block's
+position in it, `ts` is the timestamp column, `source` is `@source:`. So the header stated the
+same facts twice: once where a human could read them, and once folded into 64 characters no
+human can read — and the unreadable copy was the one called *identity*. That is §3.13 (one
+contract, one place) and §4.3 (readable with the tool off), in one line of one file.
+
+**And `body` being in there fused identity with integrity.** An identity answers *which thing
+is this*; an integrity check answers *is this thing as it was*. An identity must be stable
+across every correction that leaves the saying intact; an integrity check must be disturbed by
+exactly those corrections. §3.16's own reasoning therefore forbids the fusion, as it does for
+a name and an identity. The practical consequence was that **every corrected word was an
+identity event**, so fixing a typo meant growing the pile by a block or leaving the tool.
+
+**THE EVIDENCE, GATHERED BEFORE THE CHANGE AND NOT AFTER**, because the revisit brief said it
+must be. `scribe verify` across every real pile on disk — `STANDING-PROCEDURES.txt`,
+`RIPE-LEDGER.txt`, `tagging-lab/WATCHES.txt`, `pn-scribe/pn_canonical.txt`:
+
+| | blocks | as captured | **edited in place** | no mint |
+|---|---|---|---|---|
+| **total** | **76** | **31** | **0** | **45** |
+
+**Zero, of seventy-six, ever** — and 45 had no mint at all, so the check had only ever applied
+to 31 blocks. It cost something on every capture and every read and had never once caught
+anything. That is what makes this a removal rather than a trade.
+
+**What identity is now.** `#2644` — the right-hand digits of the timestamp printed beside it,
+extended leftward until no other block in this pile holds it. Issued at capture, checked once,
+never recomputed, and **derived from nothing about the content**. Its coordinates are *the pile
+and the name*: `PILE#id` across piles, the pile being the namespace as a directory is for a
+filename. Chosen over a random value because §3.16 sanctions exactly one way to make a short
+name — truncate for filing, and *check* the abbreviation (Knuth's WEB rule; the 2026-08-01
+defect was a truncation shipped **without** the check) — and because a handle that is a tail of
+its own timestamp can be checked by eye with no stored digest. It is also the answer the gForth
+build reached independently from the other side.
+
+**Declared cost.** The old scheme kept two identical backdated sayings apart *by construction*
+(`ordinal` cannot collapse in an append-only pile). That construction is gone and only the
+**check** remains, so the `taken` set is load-bearing in a way it was not before. Pinned
+through the real CLI with the timestamp pinned to the microsecond.
+
+**Removed with it: the deletion-signature search.** Because identity contained a block's
+ordinal, cutting one block from the middle made every later block re-derive wrong, so
+`audit_mints` searched for a trailing run verifying at one constant offset and reported
+*"K blocks removed"* instead of a wave of false alarm. That machinery was correct **and existed
+only to defend the choice to put position inside identity.** Most of what this version deletes
+is not the feature — it is the scaffolding the feature needed in order to stay tolerable.
+
+### 2. `@sealed:` — integrity, alone and opt-in
+
+`scribe capture --seal` writes a digest over the body, the declaring moment and `@source:`.
+Nothing else is covered: the rest of the vocabulary is how a pile is re-interrogated as
+thinking moves, and sealing it would make ordinary re-filing look like tampering.
+
+`scribe verify` now answers *is each SEALED block still as it was sealed?* — the same
+fact-language and the same no-severities ruling as before, guarded by the same test. It exits
+`0` unless a sealed block changed. **Neither an unsealed block nor a legacy `@mint:` sets the
+exit code**: both are permanent conditions of ordinary piles, and an alarm that always fires
+defeats disclosure while satisfying it (§3.7), teaching the reader to stop reading exit codes.
+Both are reported in full in the text.
+
+**Legacy blocks are never upgraded.** A `@mint:` cannot be re-derived from what the file alone
+says — it needed the pile's genesis and the block's frozen ordinal — so `verify` says exactly
+that rather than reporting an absence of evidence as evidence. They stay readable and mean what
+they meant.
+
+### 3. `@name:` — a name you can say again (Forth's dictionary)
+
+**The tension this answers**, in the sovereign's words: *"it would be corralling my living
+impulses into frozen addended crystallized blocks over and over???"* Until now the only way to
+record a thought said better was `push` — a new block, `@replaces:` on it, `@superseded:`
+written back onto the old one, and a chain to keep in step. Say a thing five times and the pile
+holds four bookkeeping writes and has become a record of your revisions rather than of what you
+think.
+
+**gforth has answered this since 1970.** Define `foo` twice: it does not refuse, does not make
+you supersede anything, keeps no chain. It prints `redefined foo` in the stream you are already
+reading and moves on; the old definition stays in the dictionary, unmarked and still reachable.
+**What moved is not the old thing — it is what the NAME finds.**
+
+```sh
+scribe capture --name coupling-law --append pile.txt   # …and again, later, as often as you like
+#   redefined coupling-law — 1 earlier definition(s) in pile.txt: #6308
+#   They are UNTOUCHED and still resolve by handle; nothing was marked and nothing is owed.
+scribe recall coupling-law pile.txt [--all]            # what the name finds; --all for the lineage
+scribe names pile.txt [PILE...]                        # every name, and which definition is live
+```
+
+**Nothing is written onto the earlier blocks and there is no chain in the pile.** `names`
+computes redefinition fresh on every call and never writes back — the contract `backlinks` has
+held since v1.1.2, for the reason `tagging/TAG-KEYS-reference-v1-DRAFT.md` (A.4, after Knuth)
+already gave: *back-references are derived, never hand-written.* That is what makes a
+redefinition cost the keeper nothing.
+
+**The live definition is the last one ADMITTED, not the latest-dated.** `--ts` is a supported
+flag; sorting by a stated moment would let a backdated capture silently take over a name. The
+pile is append-only and its order is a fact about what happened; a stated moment is a claim.
+
+**`@name:` carries no shape discipline, and that is a ruling (2026-08-05).** `@act:`/`@path:`
+have one because they are a shared *vocabulary* — they only work if they compare. A name is
+yours and singular and compares with nothing, so the writer refuses only what the format cannot
+survive, never what a vocabulary dislikes.
+
+**`recall` is single-pile and stays so.** Resolving a name across piles would need a rule for
+which pile wins — a global search order, which is what the pile-as-namespace model just
+removed. `names` accepts several piles, which is enough to find where a name lives.
+
+### 4. `scribe amend` — correct a body in place
+
+```sh
+echo "the quick brown fox" | scribe amend '#2644' pile.txt [--also OTHER.txt ...]
+```
+
+Nothing appended, nothing superseded, **nothing recorded** — a typo is not an event. It
+**refuses** if any block points at the target, naming what points at it and where: someone
+wrote that pointer *about the wording that is there now*, and that is exactly what `push`
+exists for. It refuses a `@sealed:` block, which is what makes sealing mean anything. `--also`
+widens the pointer check to piles you name; without it the check sees only the named pile, says
+so, and names the piles it did check. Opt-in because a tool that hunted for related piles on
+its own would be guessing, and a wrong guess here is a wrong *refusal* — which sends you to
+`push` for a typo.
+
+**This is not a feature added on top of the identity change. It is that change, seen from the
+user's side.** It could not exist while identity contained the body.
+
+### 5. `push` is unchanged and must not be tidied away
+
+Sometimes the supersession *is* the saying, and you want the reader who wanders into the
+outdated block to be told **in the file, with the tool off** (§4.3) — a property the gForth
+build cannot have at all. **Four acts now, and choosing between them is the keeper's:**
+`capture` (a new saying) · `amend` (a typo — nothing happened) · `--name` (I say this better
+now) · `push` (a revision whose supersession is itself worth recording).
+
+### 6. Charter §0.1, and where this change actually came from
+
+The narrow, evidence-backed removal in §1 above would have shipped a tool that still charged
+its keeper for having thought again. It was redirected twice by the sovereign — first to what
+`@mint:` was a *symptom* of, then to the standing tension underneath — and the result is a new
+preamble section, **§0.1 "The third position"**: a living impulse is continuous and said again;
+a computer requires nominalization to search and relate at all; **neither extreme is available
+and the job is to navigate between them.** Its third consequence is the portable test:
+
+> **What does this ask of someone who has simply thought again? The answer should usually be
+> nothing.**
+
+And the connection that earned it: the sovereign's word for the complaint was *"crystallized"*
+— which is §1's own word. **Premature crystallization** has named this project's founding
+diagnosis for five years, stated against *conversation*. It enters through the *record* too,
+and nobody had written that down: **the conversation dies while appearing fluent; the pile
+ossifies while appearing complete.**
+
+Full pathway, including the prior art that had been cited in `scribe.py` for four days in a
+narrower role than it deserved: `FINDINGS_the-identity-rebuild-and-the-tension-it-was-hiding.md`
+(development repository).
+
+**149 tests.** Test classes repinned rather than deleted: `TestIdStability`,
+`TestCaptureIssuesNominally`, `TestSealAudit`, plus new `TestAmendTheThirdDoorway` and
+`TestTheMovingName`.
+
+---
+
+## v1.3.4 — "@source: is an attribution seal, not entropy — and it is the only sealed tag" (2026-08-02)
 
 A named new version, not a silent edit (§5.8). **No behaviour change**: no format change, no
 new verb, no flag, and every existing mint still verifies. What changed is a **justification
