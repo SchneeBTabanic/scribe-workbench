@@ -565,18 +565,21 @@ scribe duplicates pile.txt
 #   no duplicated handles
 ```
 
-On an older pile that *did* collide, it shows you both blocks with their identities, so you
+On a pile that *did* collide, it shows you both blocks with their declaring moments, so you
 can see whether they are one saying recorded twice or two different sayings:
 
 ```bash
 scribe duplicates old-pile.txt
-#   old-pile.txt — 2 block(s), 1 duplicated handle(s), NO @genesis: line (legacy pile)
+#   old-pile.txt — 2 block(s), 1 duplicated handle(s), no @genesis: line
 #     #aaaa — 2 blocks
 #         2026-01-01T00:00  'first saying'
 #         2026-01-02T00:00  'second saying'
-#         ^ all legacy: whether these are one saying or two cannot be decided by the tool.
-#           Yours to rule.
+#         ^ distinct declaring moments — these ARE different sayings that happen to share
+#           a handle. Lengthen one by hand to disambiguate.
 ```
+
+Two blocks sharing an id *and* a moment is the one case it will not rule on: it says so and
+leaves it to you.
 
 **It never repairs anything, and that is deliberate** — reissuing an id would break every
 `@ref:` already pointing at it. It reports; the ruling is yours. While a handle is ambiguous,

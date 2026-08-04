@@ -1,6 +1,46 @@
 # PROVENANCE — Scribe's Workbench
 
-## v1.4.0 — "identity stops being an integrity check, and a name can be said again" (2026-08-05) — CURRENT
+## v1.4.1 — "legacy is what CARRIES a mint, not what lacks one" (2026-08-05) — CURRENT
+
+A defect fix, found by the sovereign asking what `@mint:` was still doing in the code after
+v1.4.0 retired it. **The answer was: something wrong, in three places.**
+
+**The defect.** `cmd_duplicates` decided a block was legacy with `not block.tags.get(MINT_KEY)`
+— correct while a *missing* mint meant a block predated v1.3.0. After v1.4.0 **no capture
+writes a mint at all**, so the predicate silently inverted, and a pile of blocks captured today
+was reported, confidently, as *"3 block(s) carry no @mint: — minted before the identity
+split."* Two more instances of the same shape came with it: a pile with no `@genesis:` line was
+still labelled *"(legacy pile)"* though nothing has depended on the genesis since v1.4.0, and
+`push`'s ambiguity report printed `(no @mint: — a le…` where a discriminator used to be — a
+truncated apology in a column.
+
+**The class of defect, which is the part worth keeping.**
+
+> **A predicate that was true of the past and is now true of the present.** Nothing errors,
+> nothing is skipped, no test fails — and the output is backwards with total confidence. It is
+> worse than a crash and worse than a stale comment, because the code still runs and still
+> looks like it is checking something.
+
+**Why the suite did not catch it.** `test_audit_reports_and_changes_nothing` asserted
+`"legacy" in stdout` for a pile with no `@genesis:` line. **The test encoded the same stale
+assumption the code did**, so the two agreed with each other and were both wrong. That is the
+real lesson: a test written from the same understanding as the code cannot detect that the
+understanding expired.
+
+**Fixed, and pinned in BOTH directions** — a new `TestLegacyIsWhatCARRIESAMintNotWhatLacksOne`
+asserts that a pile captured today is *not* called legacy **and** that a pile of minted blocks
+*is*. An inversion is only catchable by a test that checks both ways round; asserting one
+direction would have passed before and after.
+
+**Also changed:** what separates two blocks sharing an id. It was their distinct `@mint:`s; it
+is now the **declaring moment** — which is not a substitute for the mint, it is what the mint
+was mostly made of, read straight off the header instead of through a digest.
+
+**153 tests.**
+
+---
+
+## v1.4.0 — "identity stops being an integrity check, and a name can be said again" (2026-08-05)
 
 **The largest change since v1.0.0, and the only one that removes a guarantee.** Read this
 entry before the ones below it: several of them argue carefully for a design this version

@@ -46,7 +46,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 
-VERSION = "1.4.0"
+VERSION = "1.4.1"
 
 # The one external process the HTML path shells to. Recorded for provenance (§4.4); the
 # tool discloses the running pandoc via `scribe doctor` and hard-fails if it is absent.
@@ -2233,8 +2233,10 @@ def cmd_duplicates(args):
     problem — so this reports and changes nothing (§3.5, actor/auditor). Row 29 exactly:
     allow the collision, DECLARE it, let the human rule.
 
-    Blocks minted before 2026-08-01 carry no @mint:, and are named as legacy rather than
-    presented as though they carried an identity they do not have (§3.8)."""
+    Blocks carrying the RETIRED @mint: (issued 2026-08-01..04) are named as such rather
+    than presented as though this tool could still speak to them (§3.8). Note the direction:
+    legacy is what CARRIES a mint, not what lacks one — until 2026-08-05 it was the other way
+    round, and the predicate silently inverted when captures stopped writing mints."""
     total = 0
     legacy_total = 0
     bad_total = 0
@@ -2244,40 +2246,55 @@ def cmd_duplicates(args):
         bad_total += _announce_malformed(text_in, path)
         _, declared = genesis_of(text_in, path)
         dupes = duplicate_handles(blocks)
-        legacy = [b for b in blocks if b.id and not dict(b.tags).get(MINT_KEY)]
+        # INVERTED 2026-08-05, and the inversion was a live defect, not a tidy-up. This
+        # read `not ...get(MINT_KEY)` — written when a block WITHOUT a mint was the old one.
+        # After v1.4.0 no capture writes a mint at all, so on a pile of blocks captured
+        # today it reported every one of them as "minted before the identity split". A
+        # predicate that was true of the past and is now true of the present is the most
+        # dangerous kind of staleness: the code still runs, and its output is confidently
+        # backwards. Found by Schnee asking what `@mint:` was still doing there.
+        legacy = [b for b in blocks if b.id and dict(b.tags).get(MINT_KEY)]
         legacy_total += len(legacy)
         real = sum(1 for b in blocks if b.id)
         sys.stdout.write(f"{path} — {real} block(s), {len(dupes)} duplicated handle(s)"
-                         f"{'' if declared else ', NO @genesis: line (legacy pile)'}\n")
+                         # "(legacy pile)" until 2026-08-05 — the SECOND instance of the same
+                         # staleness in this one function. A missing @genesis: marked an old
+                         # pile only while identity folded the genesis in. It no longer does,
+                         # so the absence is now an ordinary fact about a pile's history and
+                         # is reported as one. The fact stays; the judgement goes.
+                         f"{'' if declared else ', no @genesis: line'}\n")
         if legacy:
             sys.stdout.write(
-                f"  {len(legacy)} block(s) carry no @mint: — minted before the identity "
-                f"split. Named, not upgraded: nothing here rewrites them.\n")
+                f"  {len(legacy)} block(s) carry the RETIRED @mint: (issued 2026-08-01..04). "
+                f"Named, not upgraded: nothing here rewrites them.\n")
         for h in sorted(dupes):
             bs = dupes[h]
             sys.stdout.write(f"  #{h} — {len(bs)} blocks\n")
             for b in bs:
-                mint = dict(b.tags).get(MINT_KEY)
-                shown = f"{mint[:16]}…" if mint else "no @mint: (legacy)"
                 first = (b.body.splitlines() or [""])[0][:60]
-                sys.stdout.write(f"      {b.ts}  {shown}  {first!r}\n")
-            mints = {dict(b.tags).get(MINT_KEY) for b in bs}
-            if len(mints) == 1 and None in mints:
+                sys.stdout.write(f"      {b.ts}  {first!r}\n")
+            # WHAT SEPARATES TWO BLOCKS SHARING A HANDLE, after v1.4.0. It used to be their
+            # distinct @mint:s. It is now the DECLARING MOMENT — which is not a substitute
+            # for the mint, it is what the mint was mostly made of, now read directly off
+            # the header instead of through a digest. Two moments, two declarings, two
+            # sayings; the tool can say that much and no more.
+            moments = {b.ts for b in bs}
+            if len(moments) == len(bs):
                 sys.stdout.write(
-                    "      ^ all legacy: whether these are one saying or two cannot be "
-                    "decided by the tool. Yours to rule.\n")
-            elif len(mints) == len(bs):
+                    "      ^ distinct declaring moments — these ARE different sayings that "
+                    "happen to share a handle. Lengthen one by hand to disambiguate.\n")
+            else:
                 sys.stdout.write(
-                    "      ^ distinct @mint:s — these ARE different sayings that happen "
-                    "to share a handle. Lengthen one handle by hand to disambiguate.\n")
+                    "      ^ same declaring moment: whether these are one saying or two "
+                    "cannot be decided by the tool. Yours to rule.\n")
         total += len(dupes)
     if not total:
         sys.stdout.write("no duplicated handles\n")
     if legacy_total:
         sys.stdout.write(
-            f"\n{legacy_total} legacy block(s) across all piles. They are not broken and "
-            f"are not upgraded: a handle that has worked since capture keeps working, and "
-            f"re-minting would break every relational tag pointing at it.\n")
+            f"\n{legacy_total} block(s) across all piles carry the retired @mint:. They are "
+            f"not broken and are not upgraded: an id that has worked since capture keeps "
+            f"working, and reissuing one would break every relational tag pointing at it.\n")
     return EXIT_FINDINGS if (total or bad_total) else 0
 
 
@@ -2373,9 +2390,12 @@ def cmd_push(args):
         for h, bs in report["ambiguous"].items():
             sys.stderr.write(f"  #{h} names {len(bs)} blocks:\n")
             for b in bs:
-                mint = dict(b.tags).get(MINT_KEY, "(no @mint: — a legacy block)")
+                # The @mint: column was dropped 2026-08-05. It printed `(no @mint: — a le…`
+                # for any block captured after the retirement — a truncated apology where a
+                # discriminator used to be. The declaring moment is what separates them now,
+                # and it was always already on the line.
                 first = (b.body.splitlines() or [""])[0][:60]
-                sys.stderr.write(f"      {b.ts}  {mint[:16]}…  {first!r}\n")
+                sys.stderr.write(f"      {b.ts}  {first!r}\n")
         sys.stderr.write(
             "  These are pre-existing duplicates; nothing is re-minted, because that would\n"
             "  break every relational tag pointing at them (row 29: declare the collision,\n"

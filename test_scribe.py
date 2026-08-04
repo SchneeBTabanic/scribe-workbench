@@ -1584,6 +1584,80 @@ class TestSealAudit(unittest.TestCase):
 
 
 
+class TestLegacyIsWhatCARRIESAMintNotWhatLacksOne(unittest.TestCase):
+    """A DEFECT FOUND BY BEING ASKED A QUESTION, 2026-08-05, and the class of defect is the
+    point rather than the instance.
+
+    `duplicates` decided a block was legacy with `not block.tags.get(MINT_KEY)` — correct
+    while a *missing* mint meant a block predated v1.3.0. After v1.4.0 **no capture writes a
+    mint at all**, so the predicate silently inverted: a pile of blocks captured today was
+    reported, confidently, as *"minted before the identity split"*.
+
+    **A predicate that was true of the past and is now true of the present is the most
+    dangerous kind of staleness** — nothing errors, nothing is skipped, and the output is
+    simply backwards. No existing test caught it because every test either used fresh blocks
+    (where the old code was wrong but nothing asserted the wording) or legacy fixtures. This
+    class asserts BOTH DIRECTIONS, which is the only shape that can catch an inversion."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def _run(self, path):
+        import contextlib, io
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            scribe.main(["duplicates", path])
+        return buf.getvalue()
+
+    def test_a_pile_captured_TODAY_is_not_called_legacy(self):
+        path = os.path.join(self.dir, "fresh.txt")
+        blocks = []
+        for i in range(3):
+            b, _ = scribe.make_block(f"saying {i}", [("topic", "t")], "self",
+                                     ts=f"2026-08-05T10:00:0{i}.00000{i}",
+                                     taken={x.id for x in blocks})
+            blocks.append(b)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(scribe.serialize_pile(blocks))
+        out = self._run(path)
+        self.assertNotIn("RETIRED", out)
+        self.assertNotIn("legacy", out.lower())
+
+    def test_a_pile_of_MINTED_blocks_IS_called_legacy(self):
+        path = os.path.join(self.dir, "old.txt")
+        with open(path, "w", encoding="utf-8") as fh:
+            for i in range(2):
+                fh.write(f"@@ #old{i} 2026-08-02T09:0{i} @topic:t @source:s @mint:"
+                         + "f" * 64 + f"\nsaying {i}\n\n")
+        out = self._run(path)
+        self.assertIn("RETIRED @mint:", out)
+        self.assertIn("2 block(s)", out)
+
+    def test_two_blocks_sharing_an_id_are_separated_by_their_MOMENT(self):
+        """What tells two same-handled blocks apart used to be their distinct mints. It is
+        now the declaring moment — which is not a substitute for the mint, it is what the
+        mint was mostly made of, read straight off the header instead of through a digest."""
+        path = os.path.join(self.dir, "dupe.txt")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("@@ #aaaa 2026-08-05T09:00:00.000001 @topic:t @source:s\nfirst\n\n"
+                     "@@ #aaaa 2026-08-05T09:00:00.000002 @topic:t @source:s\nsecond\n")
+        out = self._run(path)
+        self.assertIn("distinct declaring moments", out)
+        self.assertIn("ARE different sayings", out)
+
+    def test_two_blocks_sharing_an_id_AND_a_moment_are_left_to_the_keeper(self):
+        path = os.path.join(self.dir, "same.txt")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("@@ #aaaa 2026-08-05T09:00 @topic:t @source:s\nfirst\n\n"
+                     "@@ #aaaa 2026-08-05T09:00 @topic:t @source:s\nsecond\n")
+        out = self._run(path)
+        self.assertIn("cannot be decided by the tool", out)
+        self.assertIn("Yours to rule", out)
+
+
 class TestAmendTheThirdDoorway(unittest.TestCase):
     """`scribe amend` — correction as an act distinct from revision, 2026-08-05.
 
@@ -1879,7 +1953,12 @@ class TestDuplicatesAudit(unittest.TestCase):
         self.assertEqual(r.returncode, scribe.EXIT_FINDINGS)
         self.assertIn("#a8eb", r.stdout)
         self.assertIn("2 blocks", r.stdout)
-        self.assertIn("legacy", r.stdout)
+        # WAS `assertIn("legacy", ...)` for a pile with no @genesis: line. That assertion
+        # ENCODED the stale assumption and is why nothing caught the inversion — the test
+        # and the code agreed with each other and both were wrong. It now asserts the fact
+        # (the line is absent) without the judgement (that this makes the pile old).
+        self.assertIn("no @genesis: line", r.stdout)
+        self.assertNotIn("legacy", r.stdout)
         self.assertEqual(pathlib.Path(self.pile).read_text(), before)
 
     def test_clean_pile_reports_none(self):
