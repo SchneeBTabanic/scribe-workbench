@@ -302,16 +302,23 @@ sovereignty line it won't cross). The `--topic`/`--tag` flags are you telling it
 block *is*. A block with no topic just lives in arrival order and shows up in no topic view
 — which is fine; tag it later with `scribe tag c98b pile.txt --topic nas` when you decide.
 (Two tags are not yours: `scribe tag … --tag sealed:…` and `--tag mint:…` are **refused**.
-A seal is issued by `capture --seal` over the body that was actually declared; writing one by
-hand would be asserting the check instead of performing it. A `@mint:` is a retired identity
-once, at capture, and is not vocabulary.)
+A seal is issued by `scribe seal` or `capture --seal` over the body actually in the pile;
+writing one by hand would be asserting the check instead of performing it. A `@mint:` is a
+retired identity, kept readable on the blocks that carry one and never yours to edit.)
 
-**And one tag is yours but is sealed: `@source:`.** It is folded into the block's identity at
-capture, so changing it later is a *visible* act — `scribe verify` will report the block as
-`edited in place since capture`. That is deliberate: re-attributing a saying, relabelling
-handed-in material as your own or your own as an AI's, should never be silent. Correct it when
-it is wrong, and let the record show you did. **It is the only tag sealed this way** — every
-other tag, `@topic:` and `@act:` and the rest, you may revise freely with no trace.
+**And one tag of yours is inside a seal, where you take one: `@source:`.** On a **sealed**
+block, changing it is a visible act — `scribe verify` reports the block as `changed since it
+was sealed`. That is deliberate: re-attributing a saying, relabelling handed-in material as
+your own or your own as an AI's, is a different claim rather than a better wording.
+
+**On an ordinary block it is not, and that is the ruling, not a gap.** Sealing is opt-in
+(`scribe seal '#id' pile.txt`, or `capture --seal`), so most blocks report nothing — and
+`verify` says so on every run rather than letting silence read as a clean bill.
+
+**It is the only tag inside a seal.** `@topic:`, `@act:` and the rest you may revise freely
+with no trace — re-filing a pile as your thinking moves is ordinary work. So are `@origin:`
+and `@attests:`, deliberately: which *kind* of mind made a thing is a judgement that can
+honestly change, and who vouches for it is a stance you are allowed to withdraw.
 
 Repeat, block by block, whenever you're already touching that material. There's no
 "migration day" — the pile fills as you work.
@@ -453,8 +460,8 @@ safe direction you already trust.
    hand off  :  scribe export topic:X pile.txt --bare > for-ai.txt ; xed for-ai.txt &
    who points at it: scribe backlinks '#c98b' pile.txt   # v1.1.2 — see below
    two blocks, one name: scribe duplicates pile.txt      # v1.3.0 — see below
-   what did I change: scribe verify pile.txt             # v1.3.3 — as captured, or
-                                                         #   edited by hand? see below
+   what did I change: scribe verify pile.txt             # of the blocks you SEALED:
+                                                         #   as sealed, or edited? see below
 ```
 
 `scribe toc pile.txt` any time prints the whole table of contents from your tags — the list
@@ -622,7 +629,7 @@ database, no history, no copy of your old text anywhere.
 the block's frozen position, so it cannot be re-derived from what the file alone says, and
 scribe does not pretend otherwise.
 
-**Read the wording carefully, because it is deliberate.** `edited in place since capture` is a
+**Read the wording carefully, because it is deliberate.** `changed since it was sealed` is a
 **statement of fact, not a complaint.** Editing a block by hand is a door the tool deliberately
 leaves open for you; scribe has no business grading you for walking through it. That is why
 this verb has no severities, no "invalid", no warnings — and a test enforces that, so it

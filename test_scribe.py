@@ -4,7 +4,9 @@
 #
 # Each test maps to a Phase-1 gate requirement from the brief / GATE 0 rulings.
 
+import contextlib
 import hashlib
+import io
 import os
 import pathlib
 import re
@@ -1446,12 +1448,14 @@ class TestSealAudit(unittest.TestCase):
         pile is re-interrogated as thinking moves, and sealing it would make ordinary
         re-filing look like tampering."""
         blocks = self._pile(["one"])
+        _seal = lambda b: [t for t in b.tags
+                           if t[0] in (scribe.SEAL_KEY, scribe.SEALS_KEY,
+                                       scribe.SEALED_AT_KEY)]
         blocks[0].tags = [("topic", "COMPLETELY-DIFFERENT"), ("source", "self")] + \
-                         [t for t in blocks[0].tags if t[0] == scribe.SEAL_KEY]
+                         _seal(blocks[0])
         self.assertEqual(scribe.audit_seals(blocks)["states"], [scribe.AS_SEALED],
                          "re-filing must not read as tampering")
-        blocks[0].tags = [("topic", "t"), ("source", "someone-else")] + \
-                         [t for t in blocks[0].tags if t[0] == scribe.SEAL_KEY]
+        blocks[0].tags = [("topic", "t"), ("source", "someone-else")] + _seal(blocks[0])
         self.assertEqual(scribe.audit_seals(blocks)["states"], [scribe.CHANGED_SINCE_SEAL],
                          "re-attribution must not be silent")
 
@@ -2158,3 +2162,396 @@ def _run_cmd(argv):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestSealDeclaresItsOwnScope(unittest.TestCase):
+    """`@seals:` — a check must say what it covers, in the artifact.
+
+    The defect: `@sealed:<hex>` recorded a result and said nothing about its scope, so the
+    coverage lived in gen_seal's source and nowhere else. A reader with the tool off could
+    not learn what their own seal protected. Radio astronomy's CLEAN-versus-MEM distinction:
+    a reconstruction that silently assumes a model is not the same artifact as one that
+    states it. §4.3, and §0.1's bifurcation — one token was carrying both the digest and,
+    invisibly, the claim about what the digest binds."""
+
+    def _cap(self, tmp, **kw):
+        pile = os.path.join(tmp, "p.txt")
+        scribe.main(["capture", "-", "--append", pile, "--seal", "--ts",
+                     "2026-08-06T10:00:00.000001"] +
+                    [a for k, v in kw.items() for a in ("--tag", f"{k}:{v}")])
+        return pile
+
+    def test_a_seal_writes_its_scope_beside_the_digest_and_BEFORE_it(self):
+        """The readable declaration precedes the unreadable digest it describes."""
+        with tempfile.TemporaryDirectory() as tmp:
+            sys.stdin = io.StringIO("a saying")
+            pile = self._cap(tmp)
+            b = [x for x in scribe.parse_pile(open(pile).read()) if x.id][0]
+            keys = [k for k, _ in b.tags]
+            self.assertIn(scribe.SEALS_KEY, keys)
+            self.assertEqual(scribe._tag_value(b, scribe.SEALS_KEY), scribe.SEAL_SCOPE)
+            self.assertLess(keys.index(scribe.SEALS_KEY), keys.index(scribe.SEAL_KEY),
+                            "the scope must be readable BEFORE the hash it describes")
+
+    def test_scribe_tag_REFUSES_seals_for_the_same_reason_it_refuses_sealed(self):
+        """Writing a scope by hand is a claim about coverage nobody verified."""
+        with tempfile.TemporaryDirectory() as tmp:
+            sys.stdin = io.StringIO("a saying")
+            pile = self._cap(tmp)
+            b = [x for x in scribe.parse_pile(open(pile).read()) if x.id][0]
+            with self.assertRaises(scribe.TagRefused):
+                scribe.add_tags(scribe.parse_pile(open(pile).read()), b.id,
+                                add=[(scribe.SEALS_KEY, "body-only")])
+
+    def test_a_seal_is_rederived_under_the_scope_THE_BLOCK_declares(self):
+        """The durable reason this exists: widening the recipe later must not make every
+        existing seal ambiguous. A block declaring a scope this build cannot re-derive is
+        reported as undecided — never as broken, never as fine."""
+        with tempfile.TemporaryDirectory() as tmp:
+            sys.stdin = io.StringIO("a saying")
+            pile = self._cap(tmp)
+            blocks = scribe.parse_pile(open(pile).read())
+            real = [b for b in blocks if b.id][0]
+            real.tags = [(k, "body-ts-source-origin") if k == scribe.SEALS_KEY else (k, v)
+                         for k, v in real.tags]
+            rep = scribe.audit_seals(blocks)
+            self.assertEqual(rep["states"], [scribe.UNKNOWN_SCOPE])
+            self.assertEqual(rep["unknown_scope"], 1)
+
+    def test_a_PRE_SCOPE_seal_still_verifies_and_the_assumption_is_DISCLOSED(self):
+        """Seals written by 1.4.0-1.4.1 carry no @seals:. They keep working, and the
+        assumed scope is said out loud — an assumed scope and a declared one must never
+        look the same (§3.8), the same discipline genesis_of's fallback already had."""
+        with tempfile.TemporaryDirectory() as tmp:
+            sys.stdin = io.StringIO("a saying")
+            pile = self._cap(tmp)
+            blocks = scribe.parse_pile(open(pile).read())
+            real = [b for b in blocks if b.id][0]
+            # A genuine pre-scope seal: the OLD formula, and none of the fields that
+            # postdate it. Reconstructed rather than approximated, because a test that
+            # merely strips a tag would be checking a state no scribe ever wrote.
+            real.tags = [(k, v) for k, v in real.tags
+                         if k not in (scribe.SEALS_KEY, scribe.SEALED_AT_KEY,
+                                      scribe.SEAL_KEY)]
+            real.tags.append((scribe.SEAL_KEY,
+                              scribe.gen_seal(real.body, real.ts, "unknown")))
+            rep = scribe.audit_seals(blocks)
+            self.assertEqual(rep["states"], [scribe.AS_SEALED], "it must still verify")
+            self.assertEqual(rep["undeclared"], 1, "and the assumption must be countable")
+            self.assertFalse(scribe.seal_scope_of(real)[1])
+
+    def test_THE_RULED_EXCLUSIONS_origin_and_attests_are_outside_the_seal(self):
+        """RULED 2026-08-06. The axis is not subject-matter but whether the claim is
+        allowed to MOVE. @source: is a citation about a fixed past — sealed. @origin: is a
+        judgement that can honestly change; @attests: is an explicitly current stance, and
+        coming to stand behind something IS thinking again (§0.1). Both stay revisable, and
+        this test pins that as a decision rather than an oversight."""
+        with tempfile.TemporaryDirectory() as tmp:
+            sys.stdin = io.StringIO("an AI wrote this")
+            pile = os.path.join(tmp, "p.txt")
+            scribe.main(["capture", "-", "--append", pile, "--seal", "--source", "claude",
+                         "--tag", "origin:ai", "--tag", "attests:self",
+                         "--ts", "2026-08-06T10:00:00.000001"])
+            blocks = scribe.parse_pile(open(pile).read())
+            real = [b for b in blocks if b.id][0]
+            real.tags = [(k, {"origin": "human", "attests": "claude"}.get(k, v))
+                         for k, v in real.tags]
+            self.assertEqual(scribe.audit_seals(blocks)["states"], [scribe.AS_SEALED],
+                             "a judgement and a current stance must stay revisable")
+            real.tags = [(k, "someone-else" if k == "source" else v) for k, v in real.tags]
+            self.assertEqual(scribe.audit_seals(blocks)["states"],
+                             [scribe.CHANGED_SINCE_SEAL],
+                             "a citation about a fixed past must not move silently")
+
+    def test_verify_NAMES_ITS_SCOPE_AND_ITS_EXCLUSIONS_on_every_run(self):
+        """#6546's actual ask. `toc` has always printed 'NOT shown by this index:'; this is
+        that pattern reaching the one verb whose whole job is telling you whether to trust
+        a block. A check reporting only what it looked at reads as a clean bill for the rest."""
+        with tempfile.TemporaryDirectory() as tmp:
+            sys.stdin = io.StringIO("a saying")
+            pile = self._cap(tmp)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                scribe.main(["verify", pile])
+            out = buf.getvalue()
+            self.assertIn("WHAT A SEAL HERE COVERS", out)
+            self.assertIn(scribe.SEAL_SCOPE.replace("-", ", "), out)
+            self.assertIn("@origin:", out)
+            self.assertIn("@attests:", out)
+
+    def test_push_does_NOT_seal_unless_asked_and_SAYS_SO(self):
+        """RULED 2026-08-06. `amend` already refused this act in so many words — "amending it
+        would either break that seal or forge a NEW ONE IN YOUR NAME. Neither is this tool's
+        to do." — while `push` did exactly that. The sharpest objection: nobody declared any
+        of the inputs. The body is the human's, the timestamp is the push moment, and
+        `@source:` is INHERITED, so the tool froze a citation nobody made this time.
+
+        The silence was the real fault, so the drop is REPORTED, not merely performed."""
+        with tempfile.TemporaryDirectory() as tmp:
+            sys.stdin = io.StringIO("original")
+            pile = self._cap(tmp, topic="nas")
+            blocks = scribe.parse_pile(open(pile).read())
+            old_b = [b for b in blocks if b.id][0]
+            view = f"@@ #{old_b.id} {old_b.ts} @topic:nas\noriginal, revised\n"
+            merged, rep = scribe.push_view(view, blocks)
+            new = [b for b in merged if b.id and b.id != old_b.id][0]
+            self.assertNotIn(scribe.SEAL_KEY, [k for k, _ in new.tags])
+            self.assertNotIn(scribe.SEALS_KEY, [k for k, _ in new.tags])
+            self.assertEqual(rep["seal_dropped"], [(old_b.id, new.id)],
+                             "dropping a seal silently would only move the fault")
+            self.assertEqual(rep["sealed"], [])
+            self.assertEqual(scribe.audit_seals([old_b])["states"], [scribe.AS_SEALED],
+                             "and the superseded block keeps its own seal")
+
+    def test_push_seal_reissues_over_the_NEW_body_and_declares_its_scope(self):
+        """PINS WHAT THE CODE ACTUALLY DOES, after its own comment was found claiming the
+        opposite (2026-08-06). The old digest is never copied — it is a claim about a
+        different body — but a sealed lineage stays sealed: a fresh digest is issued over
+        the new body, and it now carries its scope like any other seal.
+
+        OPEN, and recorded rather than settled here: whether re-sealing without being asked
+        is right at all, when sealing is opt-in everywhere else in the tool."""
+        with tempfile.TemporaryDirectory() as tmp:
+            sys.stdin = io.StringIO("original")
+            pile = self._cap(tmp, topic="nas")
+            blocks = scribe.parse_pile(open(pile).read())
+            old = [b for b in blocks if b.id][0]
+            view = f"@@ #{old.id} {old.ts} @topic:nas\noriginal, revised\n"
+            merged, rep = scribe.push_view(view, blocks, seal=True)
+            new = [b for b in merged if b.id and b.id != old.id][0]
+            self.assertEqual(rep["sealed"], [(old.id, new.id)])
+            self.assertEqual(rep["seal_dropped"], [])
+            self.assertNotEqual(scribe._tag_value(new, scribe.SEAL_KEY),
+                                scribe._tag_value(old, scribe.SEAL_KEY),
+                                "the OLD body's digest must never be copied across")
+            self.assertEqual(scribe._tag_value(new, scribe.SEALS_KEY), scribe.SEAL_SCOPE,
+                             "a reissued seal must declare its scope like any other")
+            self.assertEqual(scribe.audit_seals([new])["states"], [scribe.AS_SEALED],
+                             "and it must verify against the body it was issued over")
+
+
+class TestSealingIsAnActWithItsOwnMoment(unittest.TestCase):
+    """`scribe seal` / `scribe unseal` — RULED 2026-08-06.
+
+    THE PHILOSOPHICAL GROUND, because it is what makes these verbs necessary rather than
+    convenient. A seal is the ONLY act in scribe by which a keeper declares that something
+    has stopped moving; everything else in the tool exists to let things move. Sealing at the
+    instant of capture therefore declares a thing finished AT ITS BIRTH, before any work has
+    been done on it — which is §1's **premature crystallization**, enacted by a flag. Until
+    now that was the only sealing scribe offered.
+
+    The sovereign's own coupling-law states the correction: *a structure cannot tell its
+    material what to be; a person couples them.* The seal (structure) must not tell the saying
+    (material) that it is finished. The person couples them, at a moment they choose — and
+    that moment is now recorded, because it is a fact about the declaring and not about the
+    thing declared."""
+
+    def _pile(self, tmp, body="a first draft"):
+        pile = os.path.join(tmp, "p.txt")
+        sys.stdin = io.StringIO(body)
+        scribe.main(["capture", "-", "--append", pile, "--source", "self",
+                     "--ts", "2026-08-06T10:00:00.000001"])
+        return pile
+
+    def test_a_block_can_be_sealed_LATER_and_the_moment_is_recorded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pile = self._pile(tmp)
+            b = [x for x in scribe.parse_pile(open(pile).read()) if x.id][0]
+            scribe.main(["seal", f"#{b.id}", pile, "--ts", "2026-08-09T12:00:00.000002"])
+            b2 = [x for x in scribe.parse_pile(open(pile).read()) if x.id][0]
+            self.assertEqual(scribe._tag_value(b2, scribe.SEALED_AT_KEY),
+                             "2026-08-09T12:00:00.000002")
+            self.assertNotEqual(scribe._tag_value(b2, scribe.SEALED_AT_KEY), b2.ts,
+                                "a seal on reflection must be distinguishable from one at birth")
+            self.assertEqual(scribe.audit_seals([b2])["states"], [scribe.AS_SEALED])
+
+    def test_the_seal_moment_is_INSIDE_the_digest_so_it_cannot_be_backdated(self):
+        """A seal moment that could be edited freely would be a claim about when a claim was
+        made, forgeable by the same hand — the shape of nothing at all."""
+        with tempfile.TemporaryDirectory() as tmp:
+            pile = self._pile(tmp)
+            b = [x for x in scribe.parse_pile(open(pile).read()) if x.id][0]
+            scribe.main(["seal", f"#{b.id}", pile, "--ts", "2026-08-09T12:00:00.000002"])
+            blocks = scribe.parse_pile(open(pile).read())
+            real = [x for x in blocks if x.id][0]
+            real.tags = [(k, "2026-08-06T10:00:00.000001" if k == scribe.SEALED_AT_KEY else v)
+                         for k, v in real.tags]
+            self.assertEqual(scribe.audit_seals(blocks)["states"],
+                             [scribe.CHANGED_SINCE_SEAL])
+
+    def test_sealing_REFUSES_an_already_sealed_block(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pile = self._pile(tmp)
+            b = [x for x in scribe.parse_pile(open(pile).read()) if x.id][0]
+            scribe.main(["seal", f"#{b.id}", pile, "--ts", "2026-08-09T12:00:00.000002"])
+            self.assertEqual(scribe.main(["seal", f"#{b.id}", pile]), 1,
+                             "re-sealing would overwrite a declaration already made")
+
+    def test_sealing_REFUSES_a_superseded_block(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pile = self._pile(tmp)
+            blocks = scribe.parse_pile(open(pile).read())
+            b = [x for x in blocks if x.id][0]
+            b.tags = b.tags + [(scribe.SUPERSEDED_KEY, "#dead")]
+            with open(pile, "w") as fh:
+                fh.write(scribe.serialize_pile(blocks))
+            self.assertEqual(scribe.main(["seal", f"#{b.id}", pile]), 1)
+
+    def test_unseal_leaves_NOTHING_BEHIND_which_is_the_ruling(self):
+        """§0.1: what does this ask of someone who has simply thought again? Nothing. A seal
+        is a claim the keeper is CURRENTLY making, in the same family as `@attests:` — not a
+        historical event — so withdrawing it owes the pile nothing and marks nothing."""
+        with tempfile.TemporaryDirectory() as tmp:
+            pile = self._pile(tmp)
+            before = [x for x in scribe.parse_pile(open(pile).read()) if x.id][0]
+            tags_before = list(before.tags)
+            scribe.main(["seal", f"#{before.id}", pile, "--ts", "2026-08-09T12:00:00.000002"])
+            scribe.main(["unseal", f"#{before.id}", pile])
+            after = [x for x in scribe.parse_pile(open(pile).read()) if x.id][0]
+            self.assertEqual(after.tags, tags_before,
+                             "an unsealed block must be indistinguishable from a never-sealed one")
+            self.assertEqual(after.body, before.body)
+
+    def test_the_seal_unseal_cycle_hands_amend_back(self):
+        """Sealing is what makes `amend` refuse. Unsealing must hand that door back, or the
+        freeze is one-way and 'the time of its use has not yet arrived' has no answer."""
+        with tempfile.TemporaryDirectory() as tmp:
+            pile = self._pile(tmp)
+            b = [x for x in scribe.parse_pile(open(pile).read()) if x.id][0]
+            scribe.main(["seal", f"#{b.id}", pile, "--ts", "2026-08-09T12:00:00.000002"])
+            sys.stdin = io.StringIO("moved again")
+            self.assertEqual(scribe.main(["amend", f"#{b.id}", pile]), 1, "sealed: refused")
+            scribe.main(["unseal", f"#{b.id}", pile])
+            sys.stdin = io.StringIO("moved again")
+            self.assertEqual(scribe.main(["amend", f"#{b.id}", pile]), 0, "unsealed: allowed")
+
+    def test_unseal_REFUSES_a_block_that_carries_no_seal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pile = self._pile(tmp)
+            b = [x for x in scribe.parse_pile(open(pile).read()) if x.id][0]
+            self.assertEqual(scribe.main(["unseal", f"#{b.id}", pile]), 1)
+
+
+class TestTheDOCUMENTSAreExecutable(unittest.TestCase):
+    """THE GUARD THE DOCUMENTATION NEVER HAD — ruled 2026-08-06 after an audit found the four
+    interface documents promising a capability the tool had stopped providing.
+
+    THE DEFECT CLASS, stated so this test's scope is understood: the v1.4.0 documentation pass
+    substituted at every site containing the literal string `@mint:` and left standing every
+    claim that expressed the same idea without using the token.
+
+        A correction that searches for a token cannot find the claims that token was making.
+
+    Prose cannot hold a commitment across future edits; a test can. This project already knew
+    that — `test_THE_LANGUAGE_GUARD_no_fault_words_anywhere_in_the_output` guards a WORDING
+    ruling for exactly this reason — and the documents had no equivalent, while making
+    executable promises on every page.
+
+    WHAT THIS DOES AND DOES NOT COVER, named so the gap is deliberate (§3.8). It checks the
+    documents' *mechanical* claims — that the verbs, flags and reserved keys they name exist,
+    and that the tool's fact-language they quote is the tool's actual fact-language. It CANNOT
+    check whether a paragraph's meaning is still true; the silent-re-attribution defect that
+    prompted it would have been caught here only via its quoted output, not via its prose. It
+    is a floor, not a proof."""
+
+    DOCS = ["README.md", "tagging/README.md", "tagging/TAGS-bench-sheet.md",
+            "tagging/TAG-KEYS-reference-v1-DRAFT.md", "GUIDE-scribe-with-xed.md"]
+
+    @classmethod
+    def setUpClass(cls):
+        here = pathlib.Path(__file__).parent
+        cls.text = {}
+        for d in cls.DOCS:
+            p = here / d
+            if p.exists():
+                cls.text[d] = p.read_text(encoding="utf-8")
+        cls.parser = scribe.build_parser()
+        cls.verbs = dict(cls.parser._subparsers._group_actions[0].choices)
+
+    def _code_spans(self, body):
+        """Commands live in backticks and fences. Prose does not, and must not be parsed —
+        `scribe accepts any @key:value` is a sentence, not an invocation."""
+        spans = re.findall(r"`([^`\n]+)`", body)
+        for blk in re.findall(r"```[a-z]*\n(.*?)```", body, re.S):
+            spans += blk.splitlines()
+        return spans
+
+    def test_every_verb_the_documents_name_is_a_real_verb(self):
+        missing = []
+        for doc, body in self.text.items():
+            for sp in self._code_spans(body):
+                for m in re.finditer(r"\bscribe\s+([a-z][a-z-]*)", sp):
+                    if m.group(1) not in self.verbs:
+                        missing.append(f"{doc}: `scribe {m.group(1)}`")
+        self.assertEqual(missing, [], "documented verb(s) that scribe does not have")
+
+    def test_every_flag_the_documents_name_exists_on_the_verb_they_name_it_for(self):
+        """Catches the shape where a flag is documented for the wrong verb, or outlives it."""
+        bad = []
+        for doc, body in self.text.items():
+            for sp in self._code_spans(body):
+                m = re.match(r"\s*(?:\$\s*)?scribe\s+([a-z][a-z-]*)\s", sp)
+                if not m or m.group(1) not in self.verbs:
+                    continue
+                known = set()
+                for a in self.verbs[m.group(1)]._actions:
+                    known.update(a.option_strings)
+                for f in re.findall(r"(?<![\w-])(--[a-z][a-z-]*)", sp[m.end():]):
+                    if f not in known:
+                        bad.append(f"{doc}: `scribe {m.group(1)} … {f}`")
+        self.assertEqual(sorted(set(bad)), [], "documented flag(s) the verb does not accept")
+
+    def test_the_fact_language_the_documents_QUOTE_is_the_tools_actual_fact_language(self):
+        """The one that fires on a real regression already survived: the docs were rewritten
+        saying `as captured` / `edited in place since capture` while the code had said
+        `as sealed` / `changed since it was sealed` since v1.3.3. Capture-relative wording is
+        not merely imprecise once a block can be sealed LATER — it is false, because the tool
+        cannot know what happened between declaring and sealing."""
+        retired = ["as captured", "edited in place since capture",
+                   "no mint — this check did not run"]
+        live = [scribe.AS_SEALED, scribe.CHANGED_SINCE_SEAL]
+        offenders = []
+        for doc, body in self.text.items():
+            record = body.split("## For the record")[0]      # history may quote history
+            # ONLY BACKTICKED occurrences count, and the distinction is not pedantry: a
+            # document QUOTING a state scribe no longer emits is making a false promise,
+            # while one CONTRASTING it in prose — "as sealed, never *as captured*" — is
+            # doing the reader a service. Calibrated when this guard's first run flagged
+            # exactly such a sentence, which is the mirror of the output-side language
+            # ruling: there even a negation was refused, because output must not put the
+            # word in a reader's head; here the explanation is the point.
+            quoted = set(re.findall(r"`([^`\n]+)`", record))
+            for phrase in retired:
+                if any(phrase in q for q in quoted):
+                    offenders.append(f"{doc}: `{phrase}`")
+        self.assertEqual(offenders, [],
+                         "capture-relative verify language outside a history section")
+        joined = " ".join(self.text.values())
+        for phrase in live:
+            self.assertIn(phrase, joined,
+                          f"the tool says {phrase!r} and no document does")
+
+    def test_the_keys_the_documents_call_the_tools_own_are_the_tools_own(self):
+        """`scribe tag` refuses a fixed set of keys. A document naming a different set sends a
+        reader to a refusal they were told would not happen, or lets them hand-write a key the
+        tool reserves."""
+        here = pathlib.Path(__file__).parent
+        bench = (here / "tagging/TAGS-bench-sheet.md")
+        if not bench.exists():
+            self.skipTest("bench sheet not present in this checkout")
+        body = bench.read_text(encoding="utf-8")
+        reserved = {scribe.SEAL_KEY, scribe.SEALS_KEY, scribe.SEALED_AT_KEY}
+        for k in reserved:
+            self.assertIn(f"@{k}:", body,
+                          f"@{k}: is refused by `scribe tag` and the bench sheet never says so")
+        # and the count the sheet claims must match the table it heads
+        m = re.search(r"\*\*5\. (\w+) keys are the tool's", body)
+        self.assertIsNotNone(m, "the bench sheet's rule 5 heading changed shape")
+        words = {"Three": 3, "Four": 4, "Five": 5, "Six": 6, "Seven": 7}
+        claimed = words.get(m.group(1))
+        self.assertIsNotNone(claimed, f"unparseable count {m.group(1)!r} in rule 5")
+        after = body[m.end():]
+        table = re.search(r"^\|.*?\n(?:\|.*\n)+", after, re.M)   # the first table only
+        rows = re.findall(r"^\| `@[a-z-]+:", table.group(0), re.M) if table else []
+        self.assertEqual(claimed, len(rows),
+                         f"rule 5 says {m.group(1)} and its table has {len(rows)} rows")

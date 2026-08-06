@@ -1,6 +1,290 @@
 # PROVENANCE — Scribe's Workbench
 
-## v1.4.1 — "legacy is what CARRIES a mint, not what lacks one" (2026-08-05) — CURRENT
+## v1.5.0 — "a check must declare what it covers, and sealing is an act with its own moment" (2026-08-06) — CURRENT
+
+Two things, and the second is why the first was reachable: **the four interface documents were
+rewritten as an interface**, and the seal learned to state its own scope.
+
+### The documentation baseline, and the defect class it exposed
+
+Schnee asked for the documents to be audited against the code before he tested the tool through
+them, *"because if I run tests, something will always be obfuscated if I am operating on wrong
+documentation."* That was the right order, and the audit found the register of defect he
+suspected.
+
+**The mechanism, verified in the commit diffs rather than inferred.** The v1.4.0 documentation
+pass substituted at every site containing the literal string `@mint:` — in the bench sheet,
+thirteen changed lines, every one of them with `@mint:` on the removed side. **Every claim that
+expressed the same idea without using the token survived untouched.**
+
+> **A correction that searches for a token cannot find the claims that token was making.**
+
+The consequence that mattered: the README and the bench sheet both still promised, in the
+present tense, that a saying could not be silently re-attributed — the README calling it *"the
+axis this project cares about most"* — while v1.4.0 had made sealing opt-in, so on an ordinary
+block the promise was false. **A capability had left the tool and its description had stayed in
+the manual.** Reproduced at the command line, not read off the source.
+
+Also found and fixed: `verify`'s help text named the retired `@mint:` twice; `push` printed
+*"keeps its body and its @mint:"* on every run; `view`'s help advertised `state:`, a key the
+tool's own `RETIRED_KEYS` announces as retired. **These are the only documentation a user meets
+without choosing to open a file**, and they were not part of any doc pass because they are code.
+
+**Rewritten:** `README.md`, `tagging/README.md`, `tagging/TAGS-bench-sheet.md` — present tense
+throughout, version archaeology relocated to a marked *"For the record"* section at the foot of
+each. `tagging/TAG-KEYS-reference-v1-DRAFT.md` keeps Appendix A as the historical harvest and
+gains **A.13**; A.11's supersession notice moved above the table it had been breaking, and A.12
+gained one. Every citation to a file outside this repo now says it is outside this repo and
+that scribe works fully without it — a recurrence of the defect commit `1333e69` already fixed
+once, returning through the two documents that commit moved.
+
+### `@seals:` — the scope, declared in the file
+
+`capture --seal` now writes `@seals:body-ts-source` beside `@sealed:<hex>`. `scribe tag`
+refuses it for the reason it refuses the digest. `verify` reads the scope **off the block**,
+re-derives under it, and names both the scope and its exclusions on every run.
+
+**The defect it closes.** `@sealed:` recorded a result and said nothing about its coverage,
+which lived in `gen_seal`'s source and nowhere else. That is a **prior baked into the procedure
+and never asked for** — radio astronomy's CLEAN-versus-MEM distinction, raised in
+`RIPE-LEDGER.txt#6546` by Opus reading a transcript rather than by anyone using the tool. §4.3
+is the clause; `toc`'s *"NOT shown by this index:"* line was the pattern, never generalised to
+the one verb whose whole job is telling you whether to trust a block.
+
+**And it is a §0.1 bifurcation:** one token carried both the digest *and*, invisibly, the claim
+about what the digest binds.
+
+**The durable reason, past tidiness:** a seal written today stays interpretable if the recipe
+ever widens. Without a declared scope, widening `gen_seal` would make every existing seal
+ambiguous — unverifiable and indistinguishable from a broken one. A block declaring a scope
+this build cannot re-derive is reported as **undecided**, never as broken. Seals written by
+1.4.0–1.4.1 carry no `@seals:`; they keep verifying and the assumed scope is **disclosed**, the
+same discipline `genesis_of`'s fallback already had.
+
+### The provenance cut — RULED by the sovereign, 2026-08-06
+
+The audit re-opened the v1.3.4 ruling on `@source:`, because three of its five premises were
+mint-dependent: the entropy argument (*"the real guarantee comes from genesis + ordinal"* —
+both retired) and the cost argument (*"removing it would invalidate every existing mint"* — no
+mints) are void. **The sunk cost that pinned the ruling in place had cleared**, so the decision
+was free to be re-made on its merits for the first time since `gen_id` was written.
+
+**What survived is the part that answered Schnee's original objection:** `@source:`'s job is to
+record *a claim about origin, frozen at the moment of declaration*, and **a uniform value is
+not an empty one.**
+
+**And the question A.12 never asked.** It diagnosed an unexamined inheritance in the
+*inclusion* of `@source:` and never asked the same of the *exclusions*: `@origin:` and
+`@attests:` are absent from the recipe for exactly the reason `@source:` was present in it —
+`gen_id` predates them. Asked properly, **the axis is not subject-matter but whether the claim
+is allowed to move:**
+
+| key | kind of claim | sealed |
+|---|---|---|
+| `@source:` | a **citation** — whose saying this is, fixed when made | **yes** |
+| `@origin:` | a **judgement** — reworking an AI draft by hand until it is yours is a real case of it honestly changing | no |
+| `@attests:` | an explicitly **current** stance | **no, necessarily** |
+
+Sealing `@attests:` would freeze a relation whose whole nature is that it moves; coming to
+stand behind something *is* thinking again, which §0.1 says should cost nothing. **The
+vocabulary already held this split and nobody had pointed it at provenance:** `@source:` is the
+`@defines:` of provenance, `@attests:` its `@name:`. Birth certificates seal; dictionary
+entries must not.
+
+**The deciding fact was that `@source:` takes any value at all** — `self`, `claude`, `Steiner`,
+`a-dream-I-had`. Documented as a near-closed list of AI names, it looked like a
+machine-checkable provenance field. It is a citation of voice, which is what seals honestly.
+
+**NAMED LIMIT (§3.8):** `@origin:ai` → `@origin:human` is silent **even on a sealed block**.
+That is the ruling, and `verify` now says so on every run rather than leaving it to be found.
+
+### A seal is asked for, never assumed — found by a test written for something else
+
+`push_view`'s comment claimed *"neither the retired `@mint:` nor a `@sealed:` is ever carried
+across … the new one is sealed only by being sealed again."* **The code re-sealed the new block
+automatically**, and had since seals existed. Comment and behaviour had disagreed in silence,
+and the disagreement surfaced only because a test written for `@seals:` happened to assert the
+comment.
+
+**`amend` had already refused the same act, in so many words:** *"amending it would either
+break that seal or **forge a new one in your name**. Neither is this tool's to do."* — and its
+refusal message ends by pointing the reader at `push`. Two verbs, opposite answers to one
+question, and the half that argued its case was the half that had thought about it.
+
+**The sharpest objection, and why this is a §0.1 bifurcation rather than a preference: nobody
+declared any of the inputs.** The body is the human's, the timestamp is the push moment, and
+`@source:` is **inherited** from the superseded block. So the tool was freezing a citation
+nobody made this time — the same unexamined-inheritance shape as `gen_id` carrying `source`
+into the mint, one level down, and squarely against the same day's ruling that `@source:` seals
+honestly *because it is a claim someone made at a moment*.
+
+**RULED and built:** push no longer seals unless asked. `push --seal` issues one over the new
+body, and discloses that the attribution came across inherited.
+
+**But the silence was the real fault, and dropping a seal quietly would only have moved it.**
+Both outcomes are announced, every time:
+
+```
+#2ea7 was SEALED; #b344 is NOT. A seal is a claim about a body, and
+this is a different body — so it is yours to make, not push's to assume.
+`scribe push --seal` makes it, over the new body, now.
+```
+
+**NAMED GAP, not built:** there is no way to seal an *existing* block. `--seal` lives on
+`capture` and now `push`; `tag` refuses the key. So a block unsealed at birth can never be
+sealed afterwards. A `scribe seal '#id' PILE` verb is the obvious shape of the answer, and is
+left for a ruling — sealing a block that has sat revisable for six months freezes it **as it is
+now**, not as it was declared, which may or may not be what a keeper means by the word.
+
+Also corrected in the same pass, and missed by the audit that found the other three: `cmd_push`
+printed *"the superseding block's mint falls back to the pile's PATH alone"* on any pile without
+a `@genesis:` line — a stale sentence about a retired mechanism, on a path most piles never
+take, which is why nobody had seen it.
+
+### Sealing is an act, and an act has its own moment — RULED 2026-08-06
+
+**The sovereign's argument:** *"If I am the creator of something and I reach a state with it
+from work done that I want then sealed, then I must be able to do that. The moment of capture
+is not necessarily the thing that must always be sealed. Declaring something can also be an
+act about some worked-on thing that comes later."*
+
+**And its mirror, brought from an inner project rather than this one:** *"We work on an inner,
+then freeze it at the time of our choosing. Conversely, if you freeze it and I want to work on
+it again, then I must have the chance to unfreeze it — especially if the time of its use and
+implementation has not yet arrived."*
+
+Both are right, and the asymmetry they remove was never ruled — it was **inherited**. `--seal`
+lived on `capture` because capture was where seals were invented; `tag` refused the key; so a
+block unsealed at birth could never be sealed at all, and one sealed at birth could be
+unsealed only by hand, unspeakably. **Sealing was opt-in at exactly one instant, which is not
+what opt-in means.**
+
+**THE PHILOSOPHICAL GROUND, which is what makes these verbs necessary rather than convenient
+— and which the sovereign asked for by name.**
+
+> **A seal is the only act in scribe by which a keeper declares that something has stopped
+> moving.** Everything else in the tool exists to let things move: `amend` costs nothing, a
+> `@name:` can be said again, `push` appends rather than overwrites.
+
+So sealing at the instant of capture declares a thing finished **at its birth, before any work
+has been done on it** — which is §1's **premature crystallization**, arriving through the
+storage layer, enacted by a flag. *That was the only sealing scribe offered.* The tool had the
+suspicious case as its default and the healthy one as impossible.
+
+**The correction is the sovereign's own saying, captured in this repo's README as its worked
+`@name:` example:** *a structure cannot tell its material what to be; a person couples them.*
+The seal (structure) must not tell the saying (material) that it is finished. **The person
+couples them, at a moment they choose** — and that moment is a fact about the *declaring*, not
+about the thing declared, which is why it is recorded and why it belongs inside the digest.
+
+**Built:** `scribe seal '#id' PILE` and `scribe unseal '#id' PILE`. `@sealed-at:` joins the
+seal's fields and enters the digest, so a seal moment cannot be backdated by the same hand
+that would benefit. Scope widens to `body-ts-source-sealedat`.
+
+**`@seals:` proved itself one day after it shipped.** The recipe widened, and *nothing already
+sealed became ambiguous*: a block declaring `body-ts-source` is still re-derived under that
+formula, by name, from its own face. That was the entire argument for building it, and it was
+tested by events rather than by reasoning.
+
+**Two claims the file now distinguishes, which it could not before:**
+
+| | meaning |
+|---|---|
+| `@sealed-at:` == the block's own timestamp | held from the start |
+| `@sealed-at:` > the block's own timestamp | *I worked on this, and THIS is the state I want held* |
+
+**And the language that had to change with it.** `verify` may now only say **as sealed** /
+**changed since it was sealed** — never *as captured*. A seal taken later cannot vouch for
+what happened between declaring and sealing, and the tool does not pretend to. The code's own
+constants had said this correctly since v1.3.3; the README and the `--help` text written
+during this session's documentation pass had regressed to capture-relative wording, and were
+corrected. **The documentation was wrong in exactly the way this session existed to fix, one
+day after fixing it.**
+
+**Unsealing marks nothing, and that is the ruling, not an omission.** No `@unsealed:`, no
+counter, no trace; an unsealed block is byte-identical to one never sealed, which a test pins.
+A seal is **a claim the keeper is currently making** — *I hold this as it stands* — putting it
+in the same family as `@attests:`, which the same day's provenance ruling deliberately left
+outside the seal because a current stance must be free to move. §0.1's test decides it: *what
+does this ask of someone who has simply thought again?* **Nothing.**
+
+**Named cost:** unseal then re-seal, and the new `@sealed-at:` is the new moment, with nothing
+recording that the block was once held under an older one. A keeper wanting that history has
+`push`, which keeps history, or their backups. The tool binds itself, not the human (§3.1).
+
+### What actually did the navigating, recorded because §0.1 does not do it alone
+
+The sovereign named the limit at the end of the session: *"Of course we won't resolve it
+perfectly — that is because we are working with the machine, so not a living thing, and we
+have to navigate the tension in between. For that there is no clear Charter design clause."*
+
+**That is accurate, and it is not a defect in the Charter.** §0.1 sits in the preamble and says
+of itself that it is *not a rule* — it is the stance every rule is an attempt at. Its portable
+test (*what does this ask of someone who has simply thought again?*) names the direction but
+rarely discriminates: the honest answer is *nothing* almost everywhere, which is why it could
+not, on its own, settle any of the four decisions this release made.
+
+**What did settle them, four times out of four, was a question that came from the tag sheet
+rather than the Charter:**
+
+> **Is this a birth certificate, or a dictionary entry?**
+> A claim about a fixed past may be frozen. A stance currently held must stay free.
+
+`@source:` is a citation — frozen. `@origin:` is a judgement and `@attests:` an avowal — free.
+`push` was freezing a citation nobody made this time — stopped. A seal is a current stance, so
+withdrawing it marks nothing. The distinction is `@defines:` versus `@name:`, which the
+vocabulary had held since July and which nobody had pointed at provenance or at sealing.
+
+**And where the tension genuinely did not resolve, the discipline was not to force it but to
+make the tool say where the residue is.** Three are shipped and stated rather than hidden:
+correcting a mistyped `@source:` on a sealed block still reports as changed; unsealing loses
+the fact that a block was once held; and `@sealed-at:` cannot tell you what happened between
+declaring and sealing — `verify` says so in that exact case.
+
+**That part IS covered by a clause — §3.8, and §3.6 behind it.** There is no rule for
+navigating the tension perfectly, and there is a rule for what you owe when you cannot: **name
+the absence, and never let it look like its own resolution.** The imperfection is structural
+because one side of it is a machine. What is not permitted is letting it be silent.
+
+### The documentation gains a guard, and it fired on its first run
+
+**RULED 2026-08-06.** The four interface documents make executable promises on every page and
+nothing executed them. This project already knew prose cannot hold a commitment across future
+edits — `test_THE_LANGUAGE_GUARD_no_fault_words_anywhere_in_the_output` guards a *wording*
+ruling for exactly that reason — and the documents had no equivalent.
+
+`TestTheDOCUMENTSAreExecutable` checks, across all five published documents, that every verb
+they name exists, every flag they name exists **on the verb they name it for**, the tool's
+fact-language they quote is the tool's actual fact-language, and the bench sheet's reserved-key
+count matches the table it heads.
+
+**It found a real defect immediately, in the one document this session had explicitly deferred.**
+`GUIDE-scribe-with-xed.md` — the file the README sends beginners to — still carried the whole
+false promise the audit began with: *"one tag is yours but is sealed: `@source:`. It is folded
+into the block's identity at capture, so changing it later is a visible act."* Unconditional,
+present tense, four days after sealing became opt-in. The audit had named the GUIDE as out of
+scope; the guard did not care what was in scope, which is the entire argument for having one.
+
+**And it needed calibration, which is worth recording honestly.** Two of its three first-run
+failures were the test's fault, not the documents': it counted table rows past the end of the
+table it meant, and it flagged *"`verify` will tell you the body is as sealed, never **as
+captured**"* — a sentence doing the reader a service. The rule now counts only **backticked**
+occurrences: a document *quoting* a state scribe no longer emits is making a false promise,
+while one *contrasting* it in prose is explaining the change. **That is the mirror of the
+output-side ruling** — there even a negation is refused, because output must not put the word
+in a reader's head; here the explanation is the point.
+
+**Named limit (§3.8):** this guard checks *mechanical* claims only. It cannot check whether a
+paragraph's meaning is still true, and the silent-re-attribution defect that prompted it would
+have been caught here **only via its quoted output**, never via its prose. It is a floor, not
+a proof, and its docstring says so.
+
+**172 tests** (7 new, `TestSealDeclaresItsOwnScope`). The language guard earned its keep during
+the build: it rejected the phrase *"is not tampering"* in new `verify` output — a **negated**
+fault word still introduces the frame, which prose could not have held and a test did.
+
+
+## v1.4.1 — "legacy is what CARRIES a mint, not what lacks one" (2026-08-05)
 
 A defect fix, found by the sovereign asking what `@mint:` was still doing in the code after
 v1.4.0 retired it. **The answer was: something wrong, in three places.**
@@ -269,7 +553,7 @@ example was teaching against the discipline it exists to introduce. Fixed in all
 
 ---
 
-## v1.3.3 — "the pile audits itself, and says what happened rather than grading it" (2026-08-02) — CURRENT
+## v1.3.3 — "the pile audits itself, and says what happened rather than grading it" (2026-08-02)
 
 A named new version, not a silent edit (§5.8). One new read-only verb, `scribe verify`.
 Nothing else changed; no format change, no flag, no behaviour change to any existing verb.
@@ -336,7 +620,7 @@ split, and the language guard).
 
 ---
 
-## v1.3.2 — "a tag a human adds must land where a human reads" (2026-08-02) — CURRENT
+## v1.3.2 — "a tag a human adds must land where a human reads" (2026-08-02)
 
 A named new version, not a silent edit (§5.8). Two defects, **both found by using the tool
 rather than by reading it**, and both of the same shape: a rule the project had already

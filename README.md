@@ -1,155 +1,148 @@
 # Scribe's Workbench
 
 A sovereign, plain-text tool: **gather** fragments from many minds and your own writing,
-**hold** them as one honest canonical pile of tagged plain text, and **present** any
-ordering you ask for as a disposable derived view — without the file's line-order ever
-being forced to carry meaning it cannot hold, and without any scripting-runtime standing
-between you and your own words.
+**hold** them as one honest pile of tagged plain text, and **present** any ordering you ask
+for as a disposable derived view — without the file's line-order ever being forced to carry
+meaning it cannot hold, and without any scripting-runtime standing between you and your own
+words.
 
 - The **pile is the truth**; every view is a rebuildable cache.
 - The pile is a **plain-text file you can read and edit with this tool switched off** —
   `cat`, `less`, any editor. Tags are ordinary labelled lines.
-- The tool **witnesses and marks; it never silently alters your text and never decides
-  for you.** No scoring, no ML, nothing that steers.
-- **The tool only ever appends.** No verb rewrites a block's body or reissues its identity;
-  a correction lands as a new block that declares what it replaces. *You* may still edit the
-  file directly — the tool binds itself, not you.
+- The tool **witnesses and marks; it never silently alters your text and never decides for
+  you.** No scoring, no ML, nothing that steers.
+- **The tool binds itself, not you.** No verb rewrites a block's body behind your back or
+  reissues its identity. *You* may still edit the file directly, whenever you like.
 
-One stdlib-only Python file (`scribe.py`). The only external it ever calls is `pandoc`,
-and only when you capture from saved HTML.
+One stdlib-only Python file (`scribe.py`). The only external it ever calls is `pandoc`, and
+only when you capture from saved HTML. Licence **AGPL-3.0-or-later**.
 
-## Using it alongside a plain editor (xed, gedit, any text editor)
+## The stance this is built from
 
-Scribe is **not** an editor and does not replace one. It sits *beside* the editor you
-already use: you compose and edit in your editor; Scribe holds the canonical pile and hands
-you clean views to work in. For a practical, worked walkthrough — how to wire it into a
-daily xed workflow, where to keep the pile so terminal paths stay short, capturing a
-fragment from an editor tab, deriving a view into a new tab, editing it and pushing the
-edits home — see **[`GUIDE-scribe-with-xed.md`](GUIDE-scribe-with-xed.md)**. The one habit
-worth learning up front: `scribe view topic:X pile.txt > X.view 2>/dev/null` writes a clean
-view file you can open in any editor, and `scribe push X.view pile.txt` lands your edits
-back in the pile by block id.
+Two forces, and neither is going away.
 
-## The pile format
+**A living thought is continuous.** It arrives unfinished, and most of what a person says is
+a redraft of what they just said. It does not come in units.
+
+**A computer requires units.** To search a thing, relate it to another, point at it from
+elsewhere, or find it again next year, it has to be made discrete, named and addressable.
+There is no version of this that is optional.
+
+Neither extreme is available. Refuse the units and you have an unsearchable heap — preserved
+and unreachable, which is the same as lost. Embrace them fully and every passing thought
+becomes a permanent addressed object that charges you paperwork for having thought again.
+
+**This tool is an attempt to stand between them.** The test it tries to pass, applied to
+every mechanism in it: *what does this ask of someone who has simply thought again?* The
+answer should usually be **nothing**.
+
+Where you find a place that fails that test, it is a defect, and worth reporting as one.
+
+## Using it beside a plain editor
+
+Scribe is **not** an editor and does not replace one. It sits *beside* the editor you already
+use: you compose and edit there; Scribe holds the pile and hands you clean views to work in.
+
+The one habit worth learning first:
+
+```sh
+scribe view topic:nas pile.txt > nas.view 2>/dev/null   # a clean file, open it anywhere
+# …edit bodies in your own editor…
+scribe push nas.view pile.txt                           # your edits land home, by #id
+```
+
+For the worked daily walkthrough — where to keep the pile so terminal paths stay short,
+capturing from an editor tab, deriving a view into a new tab and pushing it back — see
+**[`GUIDE-scribe-with-xed.md`](GUIDE-scribe-with-xed.md)**.
+
+## What a pile is
 
 ```
-@@ #<id> <ISO-timestamp> @act:protect-against-bit-rot @path:toward-integrity-over-convenience @topic:nas @source:gemini
-<the canonical block body, verbatim, any number of lines,
- until the next @@ line or end of file>
+@@ #2644 2026-08-06T14:22:11.522644 @act:protect-against-bit-rot @path:toward-integrity-over-convenience @topic:nas @source:gemini
+ZFS on the NAS for checksums and snapshots.
+Scrub monthly.
 ```
 
-Line-order is honest to **one** axis only — arrival time. Everything else (topic,
-salience, the table of contents) is derived on demand. A block can carry many tags and so
-appear in many views **without being moved or duplicated**.
+A block begins at a line starting `@@ ` in column 0 and runs until the next such line or the
+end of the file. That is the whole format.
 
-**The tags in that example are not decoration, and the order they are read in is the point.**
-scribe enforces no vocabulary — it stores any `@key:value` — but the discipline the vocabulary
-is written in has one rule above the rest: **a tag should carry a verb and a toward.**
+**Line-order is honest to one axis only — arrival time.** Everything else (topic, salience,
+the table of contents) is derived on demand. A block can carry many tags and so appear in
+many views **without being moved or duplicated**. Nothing is ever re-sorted in the file.
 
-| | | |
+**A pile explains itself.** When `capture --append` creates one, it writes a short comment
+header at the top: what the format is, which commands search it well, why a plain `grep`
+hands back fragments rather than whole records, what the `#id` is. Any reader meets it in the
+file itself — including an assistant asked to search a drive. Nothing has to be configured or
+remembered. Every line of it is a comment; block counts and round-trips are identical with or
+without it. `--no-stamp` declines it, and deleting it keeps it deleted.
+
+## Identity: the `#id`, and what it deliberately does not know
+
+**`#2644` is the identity.** Issued once when the block is captured, checked unique inside
+this pile, and never recomputed.
+
+**It says nothing about what the block contains, on purpose.** Correcting a word does not make
+a block a different block. That single decision is what lets you fix a typo without the pile
+recording an event, and it is why every relational tag — `@ref:`, `@overrules:`, and the rest
+— keeps resolving after you have revised the thing it points at.
+
+Four things worth knowing, and then you can stop thinking about identity:
+
+- **It is a tail of its own timestamp.** `#2644` against `…11.522644` on the same line. You
+  can check by eye that a header has not been fabricated, and it costs no stored digest.
+- **The pile is the namespace**, as a directory is for a filename. Two piles may hold the
+  same id and that is the model, not a collision. Across piles, write `other.txt#2644`.
+- **Ids grow, they are never renamed.** If a short one is taken, capture issues a longer one
+  and tells you. A pointer you wrote last year still lands.
+- **A short id resolves by prefix, like git's** — `#264` finds `#2644` *if it names exactly
+  one block*. If it names two, the verb writes nothing and lists the candidates. **Ambiguity
+  is refused, never guessed.**
+
+Two blocks reading `agreed` are two *sayings*, not one saying stored twice. So identity is
+not computed from what a block says — content alone cannot separate two identical utterances,
+and pretending otherwise is what makes a records tool quietly lose one of them.
+
+## The four acts — and choosing between them is yours
+
+This is the centre of the tool. Four different things can happen to a saying, they cost
+different amounts, and **the choice is never made for you**.
+
+| | when you reach for it | what it costs the pile |
 |---|---|---|
-| `@act:` | what the block **does** — an open verb phrase | carries the meaning |
-| `@path:` | what it **reaches toward or away from** | carries the meaning |
-| `@topic:` | the label on the drawer — helps you *find* it, does not say what it *means* | optional since v1.1.0 |
-| `@source:` | which mind said it | **sealed into the identity — see below** |
+| **`capture`** | a new saying | one block |
+| **`amend`** | a typo. Nothing happened. | **nothing** |
+| **`capture --name X`** | *I say this better now* | one block. No marks, no chain. |
+| **`push`** | a revision whose supersession is itself worth recording, in the file | one block + one `@superseded:` |
 
-An earlier version of this example showed `@topic:` and `@source:` alone. That is the exact
-shape the bench sheet calls a **dead tag** — *a noun in a drawer* — so the canonical example
-was quietly teaching against the project's own rule. `@topic:` is **not** retired and is
-legitimate as an index entry (Knuth's WEB index carries concepts, not just identifiers); it
-simply must not stand in for a block's meaning. The full vocabulary is in
-[`tagging/TAGS-bench-sheet.md`](tagging/TAGS-bench-sheet.md).
+### `amend` — correct a body in place
 
-### `@source:` is sealed into the mint — and it is the only tag that is
+```sh
+echo "the quick brown fox" | scribe amend '#2644' pile.txt
+```
 
-The mint is taken over `genesis + ordinal + ts + source + body`, so **`@source:` alone among
-tags is frozen into a block's identity.** Every other tag — `@topic:`, `@act:`, `@path:`, the
-whole vocabulary — is freely revisable and does not affect verification. **The tag layer is
-therefore only partly revisable**, which is a real property of the format and is stated here
-rather than left to be discovered.
+Nothing appended, nothing superseded, **nothing recorded**. A typo is not an event.
 
-**Why it is there, honestly.** Not as entropy. It was inherited from the old `gen_id`, which
-no ruling ever examined, and it is measurably the *lowest*-entropy field in a block —
-near-constant across a pile. The mint's actual guarantee comes from `genesis + ordinal`, which
-cannot collide. But it turns out to be doing a different job, and doing it well: it **seals the
-attribution.** A saying cannot be silently re-attributed — you cannot quietly relabel handed-in
-material as your own, or your own as an AI's, without `scribe verify` reporting the block as
-edited in place. That is the axis this project cares about most.
+It **refuses** in two cases, and both refusals are the point. If another block points at this
+one (`@ref:`, `@replaces:`, `@overrules:` …), someone wrote that pointer *about the wording
+that is there now* — so the wording is no longer only yours to change quietly, and `push` is
+the verb for that. And it refuses a sealed block, which is what makes sealing mean anything.
 
-**Consequence, declared:** correcting a `@source:` value is a visible act. It will report
-`edited in place since capture`, and that is right — re-attributing a saying should not be
-silent. If the value was simply wrong, correct it and let the record show that you did.
+The pointer check reads the piles you name. `--also PILE` widens it. **A pointer from a pile
+you did not name is not seen** — scribe will not go looking for related piles on its own, and
+it says so when it refuses.
 
-*And the obvious objection, which sharpens rather than weakens it:* as a keeper's practice
-matures, `@source:` may converge on a single value and lose all discriminating power. But
-discriminating between blocks was never its job here. **A uniform value is not an empty one** —
-*"in this period, everything was self-sourced"* is a true historical claim, and the more the
-boundary between one's own thinking and a machine's dissolves in practice, the more worth
-freezing the claim that was made at the time.
+### `@name:` — say it again, without paperwork
 
-### Handle and mint — two jobs, two fields (v1.3.0)
-
-**`@identity:nominal`** — scribe's declared identity kind, and this line is the declaration.
-A block is a **nominal** object: two blocks reading `agreed` are two *sayings*, not one
-saying stored twice. So identity is not computed from what a block says. (A future
-content-dedup tool over the same piles would declare `structural` and would be right to.)
-
-| | what it is | scope | who uses it |
-|---|---|---|---|
-| **id** `#2644` | the identity: issued at capture, checked unique, never recomputed | unique **within its pile**; write `PILE#id` across piles | you, and every `@ref:`/`@overrules:`-style tag |
-| **name** `@name:…` | *optional.* A name you can say again — it follows you to the newest block carrying it | as you choose | `scribe recall`, `scribe names` |
-| **seal** `@sealed:…` | *optional.* Integrity, not identity: freezes this body, moment and `@source:` | this block | `scribe verify` |
-
-The id is the right-hand digits of the timestamp printed beside it, extended leftward if a
-shorter form is already taken in this pile. **It says nothing about what the block
-contains, deliberately** — correcting a word does not make a block a different block — and
-you can check by eye that a header has not been fabricated, because the id is a tail of its
-own timestamp. Content alone cannot separate two identical utterances anyway; that is what
-content-addressing *means*.
-
-**Changed in v1.4.0, and it is a change of foundation.** Until 2026-08-05 identity was
-`@mint:` — a SHA-256 over the pile, the position, the moment, the speaker **and the body** —
-with the handle as its checked prefix. That fused three different questions into one token:
-*which thing is this* (identity), *where did it come from* (provenance), and *is it as it
-was* (integrity). The consequence was that **every corrected word was an identity event**,
-so fixing a typo meant either growing the pile by a whole block or leaving the tool. The
-three questions now have three answers: the id, the tags, and an opt-in seal.
-
-The evidence was gathered before the change, not after: `verify` across every real pile —
-**76 blocks — had reported `edited in place` zero times**, and 45 of those 76 carried no
-mint at all. The check cost something every day and had never once caught anything.
-
-Consequences worth knowing:
-
-- **Ids grow, they are never renamed.** If a short id is taken, capture issues a longer one
-  and says so.
-- **An id resolves by prefix, like git's.** Type `#264` for `#2644` and it resolves — *if*
-  it names exactly one block. If it names two, the verb refuses and asks for more characters
-  rather than picking one.
-- **Ambiguity is refused, never guessed.** If an id names two blocks, `push` and `tag` write
-  *nothing* and name the candidates. `scribe duplicates PILE` reports them.
-- **Two piles may reuse an id, and that is the model, not a collision.** The pile is the
-  namespace, as a directory is for a filename. The bug fixed in v1.3.0 was two identical ids
-  *inside one pile*, which is still refused.
-- **Nothing is ever reissued.** Blocks carrying the retired `@mint:` keep it: it stays
-  readable, it is reported as legacy by `verify`, and it is not upgraded behind you.
-- **Re-capturing the same text does not reproduce the same id.** `--ts` still pins the
-  timestamp for tests.
-- No registry, no manifest, no directory scan.
-
-### Say it again without paperwork — `@name:` (v1.4.0)
-
-**The pill this swallows:** a living thought is said again, better, over and over. Until
-v1.4.0 the only way to record that was `push` — a new block, `@replaces:` on it,
-`@superseded:` written back onto the old one, and a chain to keep in step. Say a thing five
-times and the pile holds four bookkeeping writes and has become a record of your revisions
-rather than of what you think.
+A living thought gets said again, better, over and over. If the only way to record that is a
+new block plus a mark plus a chain to keep in step, then say a thing five times and your pile
+has become a record of your revisions rather than of what you think.
 
 **Forth has answered this since 1970.** Define `foo` twice and gforth does not refuse, does
 not make you supersede anything, and keeps no chain. It prints `redefined foo` in the stream
-you are already reading and moves on; the old definition stays in the dictionary, unmarked
-and still reachable by anything holding it. **What moved is not the old thing — it is what
-the name finds.**
+you are already reading and moves on. The old definition stays in the dictionary, unmarked,
+still reachable by anything holding it. **What moved is not the old thing — it is what the
+name finds.**
 
 ```sh
 echo "Structure never informs its material." |
@@ -157,7 +150,7 @@ echo "Structure never informs its material." |
 
 echo "A structure cannot tell its material what to be; a person couples them." |
   scribe capture --name coupling-law --append pile.txt --tag act:… --tag path:…
-#   redefined coupling-law — 1 earlier definition(s) in pile.txt: #6308
+#   redefined coupling-law — 1 earlier definition(s) in pile.txt: #3177
 #   They are UNTOUCHED and still resolve by handle; nothing was marked and nothing is owed.
 
 scribe recall coupling-law pile.txt          # what the name finds now
@@ -165,41 +158,19 @@ scribe recall coupling-law pile.txt --all    # the whole lineage, arrival order
 scribe names pile.txt                        # every name, and which definition is live
 ```
 
-**Nothing is written onto the earlier blocks. There is no chain in the pile.** `scribe names`
-computes redefinition fresh on every call and never writes back — the same contract
-`backlinks` has held since v1.1.2, and for the same reason: *back-references are derived,
-never hand-written.*
+**Nothing is written onto the earlier blocks, and there is no chain in the pile.** `scribe
+names` works redefinition out fresh on every call and never writes back — the same contract
+`backlinks` holds, and for the same reason: *back-references are derived, never
+hand-written.* It is what makes saying a thing again cost you nothing at all.
 
-The live definition is the last one **admitted**, not the one with the latest timestamp —
-`--ts` is a supported flag, and sorting by a stated moment would let a backdated capture
+The live definition is the last one **admitted**, not the one with the latest timestamp.
+`--ts` is a supported flag, and ordering by a stated moment would let a backdated capture
 silently take over a name.
 
-### Correct a typo without an event — `scribe amend` (v1.4.0)
+### `push` — when the supersession is itself worth recording
 
-```sh
-echo "the quick brown fox" | scribe amend '#2644' pile.txt
-```
-
-In place. Nothing appended, nothing superseded, **nothing recorded** — a typo is not an
-event. It **refuses** if any block in the pile points at the target (`@ref:`, `@replaces:`,
-`@overrules:` …), because someone wrote that pointer *about the wording that is there now*,
-and that is precisely the case `push` exists for. It also refuses a `@sealed:` block, which
-is what makes sealing mean anything.
-
-**Four acts, and choosing between them is yours:**
-
-| | when | what it costs the pile |
-|---|---|---|
-| `capture` | a new saying | one block |
-| `amend` | a typo. Nothing happened. | nothing |
-| `--name` | *I say this better now* | one block, no marks, no chain |
-| `push` | a revision whose supersession is itself worth recording, in the file | one block + one `@superseded:` |
-
-### Push appends and supersedes — it never overwrites (v1.3.1)
-
-Until v1.3.1, `push` wrote a view's edited body over the pile's block. That made the tool
-**less append-only than it claimed**: a body could change underneath a `@ref:` that had
-been written to the old wording. It now **appends**.
+Sometimes the fact that you changed your mind *is* the saying, and you want the reader who
+wanders into the outdated block to be told **in the file, with the tool switched off**.
 
 ```
 before                                  after `scribe push`
@@ -208,171 +179,264 @@ ZFS on the NAS for checksums.           ZFS on the NAS for checksums.        ←
 
                                         @@ #b344 … @topic:nas @replaces:#2ea7
                                         ZFS on the NAS for checksums.
-                                        Also: scrub monthly.                 ← your edit, as a new block
+                                        Also: scrub monthly.                 ← your edit, appended
 ```
 
-**Bodies and identities are inviolable.** Across a push, no existing block's body changes,
-no id is reissued, and the only tag an existing block may gain is
-`@superseded:`, at most one. That is not an overwrite; it is the same act `scribe tag`
-already performs as a named verb.
+**Push appends. It never overwrites.** No existing body changes, no id is reissued, and the
+only tag an existing block may gain is `@superseded:`, at most one.
 
-- The new block **inherits the old block's tags**, so the supersession appears in every view
-  the original did — a correction that fell out of its own topic would be a silent loss.
-- The status tag is written into the file rather than derived, so **a reader with the tool
-  switched off still meets the warning** on the stale block. That legibility was chosen
-  over the purer derived form, deliberately.
-- Pushing the same view twice is **skipped, not forked**: a block already carrying
-  `@superseded:` is named, and you are told which block to edit instead.
-- `view` shows superseded blocks and **says so in its own header**; `view --current` hides
-  them and declares the hiding. Never hidden by default, never removed from the pile.
-- **Two doors, chosen per act.** Want the history in the pile? `push`. Don't want it? Edit
-  the block directly in your editor — restic keeps that history instead. The tool binds
-  *itself* to append-only; it does not bind you.
+- The new block **inherits the old block's tags**, so the correction appears in every view the
+  original did. A revision that fell out of its own topic would be a silent loss.
+- The mark is **written into the file** rather than derived, deliberately. Derived would have
+  been purer and would have meant a reader with the tool off met no warning at all on the
+  stale block — and that reader is the whole reason the mark exists.
+- Pushing the same view twice is **skipped, not forked**. You are told which block to edit.
+- `view` shows superseded blocks and says so in its header. `view --current` hides them and
+  declares the hiding. Never hidden by default, never removed from the pile.
 
-*Named limit:* `toc` and `export` do **not** filter superseded blocks and have no
-`--current` flag, so an export of a pushed-to view carries both the old body and the new.
-Only `view` knows about supersession today.
+**A seal is asked for, never assumed.** If the block you supersede was sealed, the new one is
+**not** — a seal is a claim about a body, and this is a different body. Push says so rather
+than leaving you to find out:
+
+```
+#2ea7 was SEALED; #b344 is NOT. A seal is a claim about a body, and
+this is a different body — so it is yours to make, not push's to assume.
+`scribe push --seal` makes it, over the new body, now.
+```
+
+`push --seal` issues one over the new body. Worth knowing before you use it: **the attribution
+is inherited** from the superseded block, so if `@source:` is no longer right for the new
+wording, sealing freezes a citation you did not make this time. Push says that too.
+
+**Two doors, chosen per act.** Want the history in the pile? `push`. Don't want it? Edit the
+block in your editor and let your backups hold that history instead.
+
+*Named limit:* `toc` and `export` do **not** filter superseded blocks and have no `--current`,
+so an export of a pushed-to view carries both wordings. Only `view` knows about supersession.
+
+## Integrity is opt-in, and sealing is an act with its own moment
+
+Most blocks are meant to be correctable. Some reach a state you want held.
+
+**A seal is the only act in this tool by which you declare that something has stopped
+moving.** Everything else here exists to let things move — `amend` costs nothing, a `@name:`
+can be said again, `push` appends rather than overwrites. So the seal is the one place where
+*when you do it* carries meaning, and the tool treats the moment as a fact worth recording.
+
+```sh
+scribe seal '#2644' pile.txt      # I have worked on this. THIS is the state I want held.
+scribe unseal '#2644' pile.txt    # its time has not come after all; let it move again
+scribe verify pile.txt
+
+echo "…" | scribe capture --seal --append pile.txt   # held from birth, where you mean that
+```
+
+**Sealing at capture and sealing on reflection are different claims, and the block says
+which.** `@sealed-at:` records when the seal was taken; where it equals the block's own
+timestamp, the thing was held from the start. Where it is later, you worked on it first —
+and `verify` will then tell you the body is *as sealed*, never *as captured*, because the
+tool cannot know what happened in between and will not pretend to.
+
+**Unsealing marks nothing.** No tag records that a block was ever sealed. A seal is a claim
+you are *currently* making — not an event — and changing your mind about holding something
+owes the pile nothing. That is the same reason `@attests:` sits outside the seal: a current
+stance has to be free to move.
+
+A sealed block gets `@sealed-at:<moment>`, `@seals:body-ts-source-sealedat` and
+`@sealed:<digest>`. `scribe verify` re-derives the digest and reports whether the block is
+still the one the seal was issued for.
+
+**The seal declares its own scope, in the file, and this matters more than it looks.** A check
+whose coverage is knowable only by reading the tool's source is a prior baked into the
+procedure and never stated. `@seals:body-ts-source` says on the block itself what the digest
+covers — so you can read it with the tool off, and so a seal written today stays interpretable
+if the formula ever widens.
+
+| the seal covers | the seal does **not** cover |
+|---|---|
+| the **body** | `@topic:`, `@act:`, `@path:` — the whole revisable vocabulary |
+| the **declaring moment**, and the **seal moment** | `@origin:` (human or ai) |
+| *(and only when asked — `seal`, `capture --seal`, `push --seal`)* | |
+| **`@source:`** — whose saying it is | `@attests:` (who vouches for it) |
+
+**Those exclusions are chosen, not overlooked.** Re-filing a block as your thinking moves is
+not tampering, and a check that fired on it would be useless. `@attests:` in particular is a
+*current* stance — coming to stand behind something, or withdrawing from it, is thinking
+again, and thinking again should cost nothing. `@source:` is different in kind: it is a
+citation, a claim about a fixed past, and freezing it is what stops a saying being quietly
+re-attributed.
+
+**Consequence, declared rather than left to be discovered:** on an unsealed block, changing
+`@source:` is reported nowhere. On a sealed block, changing `@origin:` or `@attests:` is
+reported nowhere. `verify` states what it did not check, every time it runs.
+
+`verify` reports in **fact-language only** — `as sealed` / `changed since it was sealed` /
+`not sealed, so this check did not run`. A hand-edit is a sanctioned act. There are no
+severities here and there never will be.
+
+## Tagging, in one page
+
+```
+@@ #2644 … @act:protect-against-bit-rot @path:toward-integrity-over-convenience @topic:nas @source:gemini
+```
+
+scribe **enforces no vocabulary** — it stores any `@key:value` and holds no registry. The
+vocabulary belongs to the person keeping the pile. The discipline it is written in has one
+rule above the rest: **a tag should carry a verb and a toward.**
+
+| | | |
+|---|---|---|
+| `@act:` | what the block **does** — an open verb phrase | carries the meaning |
+| `@path:` | what it **reaches toward or away from** | carries the meaning |
+| `@topic:` | the label on the drawer — helps you *find* it, does not say what it *means* | optional |
+| `@source:` | whose saying it is — **any value you like**, `self`, `claude`, `Steiner` | sealed, where a seal is taken |
+
+    @topic:knowledge-integration                    dead — a noun in a drawer
+    @act:extend-insight @path:toward-recombination  alive — a doing, and a direction
+
+A tag that only names a subject can answer one question — *what is this about?* — and an
+index that reads one key teaches you to write for that key. Hence `scribe toc PILE --by
+<key>`: the same pile indexed along whatever axis you name, with the index stating which keys
+it is **not** showing you.
+
+**Four keys are the tool's**, not vocabulary:
+
+- **`@sealed:`** and **`@seals:`** — the digest and its declared scope. `scribe tag` refuses
+  both; writing one by hand would assert a check rather than perform it.
+- **`@superseded:`** and **`@replaces:`** — the two halves of one supersession, written by
+  `push`. You may also write these by hand, to record a relation `push` had no part in.
+
+Full vocabulary and the working discipline: **[`tagging/`](tagging/)** — open
+`TAGS-bench-sheet.md` while you work, `TAG-KEYS-reference-v1-DRAFT.md` when you want to know
+why a key exists.
 
 ## Verbs
 
 ```
-scribe capture [--tag k:v]... [--topic T]... [--source S] [--html] [--append PILE]
+scribe capture [--tag k:v]... [--topic T]... [--source S] [--name N] [--seal]
+               [--html] [--append PILE] [--no-stamp]
     Clean handed input into a block. Plain text is kept verbatim; --html recovers
-    structure + LaTeX (from MathML) + strips fluff via pandoc. Loss is marked in-band.
+    structure + LaTeX (from MathML) and strips fluff via pandoc, marking loss in-band.
     --tag writes ANY key: the vocabulary is the human's, not the tool's.
 
-scribe view topic:nas PILE            # gather every block on a topic (un-moved);
-    --current hides blocks a later block superseded (declared in the view header —
-    they are never hidden by default, and never removed from the pile)
-scribe view act:guards-the-edge PILE  # …or on any other key; --recent for newest-first
-scribe toc PILE [--by KEY]            # contents by any key; names its axis and its loss
-scribe keys PILE                      # every key and value in the pile, with counts
-scribe export topic:nas PILE [--bare] [--joiner S] # clean export to paste into the
-    next mind; --joiner (v1.1.1) makes the concatenation itself code-safe when a body
-    is meant to tangle into one runnable file (default joiner is prose punctuation and
-    breaks code) — see tagging/TAGS-bench-sheet.md's "For the tangle-loop" section
-scribe push VIEW PILE                 # push edits made in a view home, by #id —
-    APPENDS a superseding block, never overwrites. The old block keeps its body and
-    its id and gains exactly one tag, @superseded:#new; the new one carries
-    @replaces:#old and inherits the old block's tags. To correct a block WITHOUT
-    leaving that history in the pile, edit it directly — restic keeps that history
-    instead. Both doors are yours; this one is push's.
-scribe tag 50c1 PILE --tag aspect:manifesting   # add/remove tags on a block
-scribe blocks PILE                    # list blocks with their whole tag run
-scribe backlinks TARGET PILE [PILE...] # derive every block whose tag VALUE names
-    TARGET (the reverse of @ref:/@overrules:/etc.) — TARGET is #id (this pile) or
-    pile.txt#id (a named pile, for relations BETWEEN piles); computed fresh, never
-    written back — see tagging/TAG-KEYS-reference-v1-DRAFT.md A.9
-scribe recall NAME PILE [--all]       # what does this name find? (Forth's lookup)
-scribe names PILE [PILE...]           # every @name: and which definition is live
-scribe amend '#id' PILE               # correct a body in place — no block, no mark
-scribe verify PILE [PILE...]          # is each SEALED block still the one its @sealed: was
-    issued for? Re-derives every mint from the file itself and reports in FACT-language
-    only: `as captured` / `edited in place since capture` / `no mint — this check did
-    not run`. A hand-edit is a sanctioned act, so there are no severities here and never
-    will be. A cut block is reported as a POSITION SHIFT, not as a wave of edits
-scribe duplicates PILE [PILE...]      # every handle used by more than one block, with
-    each one's tags so you can see whether they are one saying or two. Read-only:
-    it declares collisions and never repairs them (re-minting would break every
-    relational tag pointing in).
-scribe activate CONDITION PILE [PILE...] [--key awaits] # every block currently
-    declaring @awaits:CONDITION (or --key), across any piles named — the query
-    half of a dpkg-trigger-style interest/activate pair; read-only, never promotes
-scribe verify-export EXPORTED selector PILE [--recent] # has the pile drifted
-    since EXPORTED was written? Reports MATCH/DRIFT/NO MANIFEST only, never
-    repairs — see the content:sha256: fingerprint every non-bare export now carries
-scribe converges PILE PILE [...] [--by KEY] [--no-cites] # candidate DNA shared
-    between DIFFERENT piles never explicitly cross-referenced: shared tag-values
-    and shared Charter-clause citations. Disclosed candidates only, never merged
-scribe stamp PILE [--show]            # put the pile's own reading instructions on top
-scribe check TEXT                     # run the loss-auditor standalone
-scribe doctor                         # disclose the artifact SHA + runtime deps
+scribe view key:value PILE [--recent] [--current]
+    Gather every block carrying that tag, whole and un-moved. --current hides blocks a
+    later block superseded, and declares the hiding in the view header.
+scribe toc PILE [--by KEY]        contents by any key; names its axis and its loss
+scribe keys PILE                  every key and value in the pile, with counts
+scribe blocks PILE                every block with its whole tag run
+scribe export key:value PILE [--bare] [--joiner S]
+    Clean export to paste into the next mind. --joiner makes the concatenation itself
+    code-safe when bodies are meant to tangle into one runnable file.
+
+scribe push VIEW PILE [--seal]    land a view's edits home by #id — appends a superseding
+                                  block; never overwrites. The new block is not sealed
+                                  unless you ask; either way push says which.
+scribe amend '#id' PILE [--also PILE]   correct a body in place — no block, no mark
+scribe tag '#id' PILE --tag k:v [--remove k:v]   add or remove tags on a block
+scribe capture --name N …         say it again; the name follows you
+scribe recall NAME PILE [--all]   what does this name find? (Forth's lookup)
+scribe names PILE [PILE...]       every @name:, and which definition is live
+
+scribe seal '#id' PILE            hold the body now in the pile, recording WHEN you held
+                                  it. Refuses an already-sealed or superseded block.
+scribe unseal '#id' PILE          withdraw a seal; the block is ordinary again. Nothing
+                                  is marked — changing your mind owes the pile nothing.
+scribe verify PILE [PILE...]      is each SEALED block still the one its seal was issued
+                                  for? Reports in fact-language, and states what it did
+                                  NOT check
+scribe backlinks TARGET PILE [PILE...]
+    Every block whose tag VALUE names TARGET — the reverse of @ref:/@overrules:/etc.
+    TARGET is '#id' or 'pile.txt#id'. Computed fresh, never written back.
+scribe duplicates PILE [PILE...]  every id used by more than one block, with its tags.
+                                  Read-only: declares, never repairs.
+scribe activate CONDITION PILE [PILE...] [--key awaits]
+    Every block declaring @awaits:CONDITION — the query half of an interest/activate
+    pair. Read-only, never promotes.
+scribe verify-export EXPORTED key:value PILE
+    Has the pile drifted since EXPORTED was written? MATCH / DRIFT / NO MANIFEST.
+scribe converges PILE PILE [...] [--by KEY]
+    Candidate shared DNA between different piles never explicitly cross-referenced.
+    Disclosed candidates only, never merged.
+
+scribe stamp PILE [--show]        put the pile's own reading instructions on top
+scribe check TEXT                 run the loss-auditor standalone
+scribe doctor                     disclose the artifact SHA + runtime deps
 ```
 
 Nothing runs on its own; you summon every view by an explicit command. The pile is never
-mutated to produce a view. Edits pushed home are matched deterministically by `#id`, and
-land as an appended superseding block — never as an overwrite.
+mutated to produce a view.
 
-**Tagging.** scribe stores any `@key:value` and holds no registry — the vocabulary is the pile
-keeper's. The discipline that vocabulary is written in lives in [`tagging/`](tagging/): open
-`tagging/TAGS-bench-sheet.md` while you work, `tagging/TAG-KEYS-reference-v1-DRAFT.md` when you
-want to know why a key exists. One-line version: a tag should carry **a verb and a toward**.
+**Exit codes.** `0` clean · `1` refused, and nothing was done · `2` done, with findings to
+disclose.
 
-Three keys are the **tool's**, not yours: `@sealed:`/`@mint:` (digests — refused by `tag`,
-excluded from `keys` with a notice, and it says so), and `@superseded:`/`@replaces:`, which
-`push` writes as the two halves of one supersession. You may still write the supersession pair
-by hand to record a relation `push` had no part in; a digest is never yours to edit.
+## Two components that are not the core
 
-**A pile explains itself.** When `capture --append` creates a pile it writes a short comment
-header at the top — what the format is, which commands search it well, why a plain `grep`
-returns fragments rather than whole records, what the `#id` is, and how `@name:` lets a
-saying be said again. Any reader meets it in the file itself, including an assistant asked to search a drive;
-nothing has to be configured or remembered. The header also carries the pile's own
-`@genesis:` line — its birth moment, kept as a record of when the pile began. Until v1.4.0
-it was also load-bearing: it was folded into every `@mint:` and was what kept one pile's
-identities distinct from another's. Nothing depends on it now — the pile itself is the
-namespace — and it is retained because when a pile began is worth knowing on its own
-account. It is written **only at birth** (or by `scribe stamp` on an existing pile), so
-deleting it keeps it deleted, and `--no-stamp` declines it. Every line is a comment in the preamble: block counts, indexes and
-round trips are identical with or without it.
+**`viewer/` — not ready.** An experimental full-screen Textual front-end: commands in, views
+as throwaway tabs. **Unfinished; do not depend on it.** It cannot damage a pile — it shells
+out to scribe — but it may silently not offer you something scribe has. `textual` is its
+dependency alone; scribe itself stays stdlib-only. See `viewer/README.md`.
 
-A pile born before 2026-08-01 has no `@genesis:` line. It is **not broken** and nothing is
-upgraded behind you: its mints fall back to the pile's path alone — still distinct from other
-piles, but carrying no birth moment — and every verb that meets one says so. `scribe stamp`
-gives such a pile a genesis from that moment forward; blocks already in it keep the handles
-they have.
-
-**Exit codes.** `0` clean · `1` refused (nothing was done) · `2` done, with findings to
-disclose. A tag value that would make a header unreadable is refused on write and announced
-on every read; a read never refuses to open a pile, a write-back always refuses to rewrite a
-broken one.
-
-## The optional shell (viewer/) — **not ready**
-
-`viewer/` holds an experimental full-screen front-end built on Textual: commands in, derived
-views as throwaway tabs, `push` from inside a tab. **It is unfinished and needs more work — do
-not depend on it.** The supported way to use scribe is the command line beside your own editor,
-which is what `GUIDE-scribe-with-xed.md` teaches; the shell adds only convenience on top of
-that, and it has repeatedly fallen behind scribe's own verb list (`duplicates`, added in
-v1.3.0, is not forwarded). It cannot damage a pile — it shells out to scribe and only `push`
-writes — but it may silently not offer you something scribe has. `textual` is its dependency
-alone; scribe itself stays stdlib-only. See `viewer/README.md`.
-
-## Capturing from a chat (edge/)
-
-`edge/chatgpt_adapter.py` turns a **saved** ChatGPT page (File ▸ Save Page As) into
-canonical blocks — recovering the clean LaTeX and code fences that a plain copy-paste
-garbles. It is a **quarantined, non-frozen** component (provider DOMs drift); the frozen
-core never depends on it. See `edge/README.md`.
-
-## Freeze
-
-v1.3.4 current (additive over v1.0-frozen; frozen-ness was ruled to never be a reason
-not to correct the tool — see `PROVENANCE.md`'s v1.1.0 entry). Stdlib-only,
-offline-rebuildable. Verify with `scribe doctor`. License **AGPL-3.0-or-later**.
-
-**Two behaviour changes are breaking, and are named as such.** v1.3.0 removed `gen_id`, so
-re-capturing the same text no longer reproduces the same id — that reproducibility *was* the
-duplicate bug. v1.3.1 changed what `push` does to the pile: it appends instead of
-overwriting. Existing piles are untouched by both and keep working.
+**`edge/` — capturing from a chat.** `edge/chatgpt_adapter.py` turns a **saved** ChatGPT page
+into canonical blocks, recovering the LaTeX and code fences a copy-paste garbles. Deliberately
+**quarantined** (provider DOMs drift); the core never depends on it. See `edge/README.md`.
 
 ## Design principle
 
-The tool does **no generation** and steers nothing: no scoring, no embeddings, no
-measurement ever governs an output. It captures, holds, and presents; the human decides.
-Capture *witnesses and marks* (a separate deterministic auditor flags lossy reductions
-in-band); it never silently alters your text. This is deliberate — a measurement that
-feeds back into what gets produced is the one pattern this project refuses.
+The tool does **no generation** and steers nothing: no scoring, no embeddings, no measurement
+ever governs an output. It captures, holds, and presents; the human decides. Capture
+*witnesses and marks* — a separate deterministic auditor flags lossy reductions in-band — and
+never silently alters your text.
+
+This is deliberate. A measurement that feeds back into what gets produced is the one pattern
+this project refuses.
 
 ## Documents in this repo
 
-- `GUIDE-scribe-with-xed.md` — practical guide to using Scribe beside a plain editor (xed).
-- `PROVENANCE.md` — freeze record (SHAs, toolchain).
-- `edge/README.md` — the quarantined capture edge.
-- `viewer/README.md` — the optional Textual shell. **Unfinished; not ready for daily use.**
-- `tagging/README.md` — which of the two tag docs below to open, and when.
-- `tagging/TAGS-bench-sheet.md` — the DOING sheet; keep this open while you tag.
+- `GUIDE-scribe-with-xed.md` — practical guide to using Scribe beside a plain editor.
+- `tagging/README.md` — which of the two tag documents to open, and when.
+- `tagging/TAGS-bench-sheet.md` — the DOING sheet; keep it open while you tag.
 - `tagging/TAG-KEYS-reference-v1-DRAFT.md` — the WHY behind each key, for a rainy day.
+- `edge/README.md` · `viewer/README.md` — the two non-core components.
+- `PROVENANCE.md` — the build record: what changed, when, and on what evidence.
 
-*(The full gated build record and design correspondence are kept in the sovereign's
-development repository, not in this public release.)*
+---
+
+## For the record — how this arrived
+
+*Everything above describes the tool as it is. This section is for a reader who wants to know
+why it is that shape, and it is safe to skip. Nothing here is needed to use scribe.*
+
+**Verify with `scribe doctor`.** Stdlib-only, offline-rebuildable.
+
+**Identity was rebuilt on 2026-08-05, and it is the change everything else hangs off.** Until
+then a block's identity was `@mint:` — a SHA-256 over the pile, the block's position in it,
+the moment, the speaker **and the body**. That fused three different questions into one token:
+*which thing is this* (identity), *where did it come from* (provenance), and *is it as it was*
+(integrity). The consequence was that **every corrected word was an identity event**, so
+fixing a typo meant either growing the pile by a whole block or leaving the tool.
+
+The evidence was gathered before the change, not after: `verify` across every real pile — 76
+blocks — had reported `edited in place` **zero times**, and 45 of those 76 carried no mint at
+all. The check cost something every day and had never once caught anything. That is what makes
+it a removal rather than a trade.
+
+The three questions now have three answers: the `#id`, the tags, and an opt-in seal. `amend`
+is that change seen from the user's side — the only thing that had to be true first was that a
+body is not part of what a block *is*.
+
+**Blocks carrying the retired `@mint:` keep it.** It stays readable, `verify` reports it as
+legacy, and it is never upgraded behind you — reissuing would change values that relational
+tags already resolve against.
+
+**`@genesis:` in the pile stamp** records when the pile began. Until 2026-08-05 it was
+load-bearing: it was folded into every `@mint:` and was what kept one pile's identities
+distinct from another's. Nothing depends on it now — the pile itself is the namespace — and it
+is kept because when a pile began is worth knowing on its own account.
+
+**Breaking behaviour changes, named as such.** v1.3.0 removed the content-derived id, so
+re-capturing the same text no longer reproduces the same id — that reproducibility *was* a
+duplicate-block bug. v1.3.1 made `push` append instead of overwrite. v1.4.0 retired `@mint:`.
+Existing piles are untouched by all three and keep working.
+
+**Full history, with the reasoning and the evidence for each ruling:** `PROVENANCE.md`.

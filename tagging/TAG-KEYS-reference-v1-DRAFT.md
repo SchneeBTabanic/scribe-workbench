@@ -1,16 +1,26 @@
-# Tag-Keys Reference — v1 WORKING DRAFT (2026-07-25)
+# Tag-Keys Reference — v1 WORKING DRAFT
 
 > **Working by hand? Open `TAGS-bench-sheet.md` instead.** That is the doing sheet — plain language,
 > the key list, the value formulas, and how to get a tag onto a block today. **This** file is the
 > *why*: where each key came from, what it was tested against, and which Charter point it sits under.
 > Useful later; overload now.
 
-**Status: CANDIDATE, not settled.** These keys are drawn from this session's pod + verb-formative work.
-Refine them as *you* test tagging by hand — the method is yours to lead. scribe accepts ANY `@key:value`
-(no registry in the code), so this sheet — not scribe — is the discipline that keeps keys coherent.
+**How to read this file.** The sections above the appendix line are the **live vocabulary** and are
+written in the present tense — they describe the discipline as it stands. **Appendix A is the
+historical harvest**: where each key was mined from, what was rejected, and the rulings as they were
+made, kept in the order they were made and corrected by appending rather than by editing in place.
+A superseded section in the appendix carries a notice at its head; take the notice seriously, because
+the reasoning below it is often still sound even where its conclusion has moved.
 
-**Check any tag as you go:** `python3 GTPS-Agent/tag_validator.py "@act:… @path:… @aspect:…"` → PASS or the
-exact reasons to REPHRASE. It gates the *shape*; you own the *reaching*.
+**Status: CANDIDATE, not settled.** scribe accepts ANY `@key:value` (no registry in the code), so this
+sheet — not scribe — is the discipline that keeps keys coherent. Refine it as *you* test tagging by
+hand; the method is the keeper's to lead.
+
+**A shape-checker exists and is not in this repo.** `tag_validator.py`, in the sibling GTPS-Agent
+project, answers PASS / REPHRASE / HELD on a proposed tag's *shape*. **scribe works fully without
+it** — nothing in this repo calls it. Likewise, the source files cited throughout Appendix A live in
+the sovereign's research repositories: those citations are a record of what was read, not links you
+can follow from a clone.
 
 ---
 
@@ -606,22 +616,27 @@ downstream of §3.16, which is why it is numbered second.
 
 **Built as scribe v1.3.0 — the split, in the terms this sheet cares about:**
 
+> ### ⛔ SUPERSEDED 2026-08-05 (scribe v1.4.0) — read this before the table below
+>
+> **`@mint:` is retired, and the table that follows is kept as the record of what was believed
+> rather than corrected in place.** It restated four facts the header already stated readably —
+> which pile, which position, when, and `@source:` — in 64 characters nobody can read; and by
+> also covering the **body** it fused *identity* with *integrity*, which made every corrected
+> word an identity event. Evidence first: `verify` across all four real piles, **76 blocks,
+> `edited in place` reported zero times**, 45 of them carrying no mint at all.
+>
+> **What holds now:** the `#id` **is** the identity — issued at capture from the declaring
+> moment, checked unique in the pile, never recomputed, derived from nothing about the content.
+> Its coordinates are *the pile and the name* (`PILE#id` across piles). Integrity moved out to
+> an **opt-in** `@sealed:`, which declares its own scope in `@seals:`. A name you can say again
+> is `@name:`, after Forth's dictionary. See **A.13**, `PROVENANCE.md` v1.4.0, and Charter §0.1.
+>
+> **The three numbered points after the table are superseded with it.** Their reasoning about
+> *why an identity must not be computed from content* is still sound and still governs; only
+> their conclusion — that the answer is a mint — has moved.
+
 | | what it is | where it lives | who points at it |
 |---|---|---|---|
-> **SUPERSEDED 2026-08-05 (scribe v1.4.0), and the table below is kept as the record of what
-> was believed rather than corrected in place.** `@mint:` is retired. It restated four facts
-> the header already stated readably — which pile, which position, when, and `@source:` — in
-> 64 characters nobody can read, and by also covering the **body** it fused *identity* with
-> *integrity*, which made every corrected word an identity event. Evidence first: `verify`
-> across all four real piles, **76 blocks, `edited in place` reported zero times**, 45 of
-> them carrying no mint at all.
-> 
-> **What holds now:** the `#id` **is** the identity — issued at capture from the declaring
-> moment, checked unique in the pile, never recomputed, derived from nothing about the
-> content. Its coordinates are *the pile and the name* (`PILE#id` across piles). Integrity
-> moved out to an **opt-in** `@sealed:`. A name you can say again is `@name:`, after Forth's
-> dictionary. See `PROVENANCE.md` v1.4.0 and Charter §0.1.
-
 | **handle** `#a8eb` | the **name** — shortest prefix of the mint that no other block in **this pile** holds | the `#id` at the front of the header | every `@ref:`/`@overrules:`/`@superseded:`-style tag value on this sheet |
 | **mint** `@mint:` | the **identity** — whole SHA-256, never truncated, frozen at capture | an ordinary tag, **last** in the tag run | nothing |
 
@@ -643,7 +658,15 @@ Three points a tag-writer actually needs:
    ambiguous handle they write **nothing** and name every candidate. New read-only verb
    `scribe duplicates` declares collisions and never repairs them — re-minting would change ids
    that the relational tags on this sheet already point at, which is row 29's discipline exactly.
-   Legacy blocks (captured before the split, no `@mint:`) are **named, never upgraded**.
+   Legacy blocks are **named, never upgraded**.
+
+   > **The predicate in this line was inverted and is corrected here (scribe v1.4.1,
+   > 2026-08-05).** It originally read *"legacy blocks (captured before the split, **no**
+   > `@mint:`)"*, which was true only while captures were still writing mints. After v1.4.0 no
+   > capture writes one at all, so the test silently flipped meaning and reported every
+   > freshly-captured block as legacy. **Legacy is what CARRIES a mint, not what lacks one.**
+   > A definition that depends on which era you read it in is the same defect this appendix
+   > exists to prevent.
 
 **Built as scribe v1.3.1 — and this is what updates A.2 and A.4.** `push` no longer overwrites a
 block; it **appends** a superseding one. A.2's `@superseded:` row ruled the direction (*put it on
@@ -686,6 +709,29 @@ Full writeup: `RIPE-LEDGER.txt` `#8a29` (the case), `#d100` (the ratification), 
 (the append-and-supersede ruling and its build); provenance: `PROVENANCE.md` v1.3.0 and v1.3.1.
 
 ## A.12 — `@source:` is sealed into the identity: an inherited default, re-justified rather than removed (2026-08-02)
+
+> ### ⚠ PARTLY SUPERSEDED 2026-08-05/06 — the argument survived, the mechanism did not
+>
+> **What is still true, and is the durable part:** `@source:` is not in the recipe as entropy —
+> it fails at that, measurably. It is there because it **seals an attribution**, and the mirror
+> objection (that `@source:` may converge on one value as a keeper's practice matures) *sharpens*
+> the case rather than weakening it: **a uniform value is not an empty one.** All of that holds.
+>
+> **What has moved:**
+> - **`@mint:` is retired.** Everywhere this section says *mint*, read *seal* — and read
+>   **opt-in**, which the mint was not. On an unsealed block, changing `@source:` is reported
+>   nowhere. That is now a ruling (2026-08-06), not an oversight.
+> - **`test_ONLY_source_is_sealed_into_the_mint` was renamed**, not deleted. The guard is intact
+>   as `test_ONLY_source_is_sealed_of_the_tags`.
+> - **`@source:` is NOT the human/ai axis, and this section overstates its reach.** That axis is
+>   **`@origin:`**, which is not sealed and is allowed to change. See A.13.
+>
+> **What was wrong in it, and is worth naming because the appendix exists to catch exactly
+> this:** the section's closing claim — *"`@source:` is the only tag inside the mint … so the tag
+> layer is only PARTLY revisable"* — diagnosed an **unexamined inheritance** in the *inclusion*
+> of `@source:` and never asked the same question of the **exclusions**. `@origin:` and
+> `@attests:` are absent from the recipe for precisely the reason `@source:` was present in it:
+> `gen_id` predates them both. Only the inclusion was ever re-examined. A.13 asks the other half.
 
 **Raised by Schnee, and the question was the right one:** *"what is this continued obsession
 with `@source:`? Why out of all the keys is it so important and chosen? When I use AI LLMs,
@@ -745,3 +791,112 @@ rehabilitates `@topic:` as a legitimate index entry, Knuth's WEB index carrying 
 not only identifiers), but the **dead-tag shape this sheet's own one-line rule forbids**: *a
 noun in a drawer*. The canonical example was quietly teaching against the discipline it was
 meant to introduce. Fixed in README, the xed guide, and the bench sheet's worked block.
+
+## A.13 — Identity stops being an integrity check; the provenance keys are cut by whether they move (2026-08-05/06)
+
+**This section supersedes A.11's table and A.12's mechanism, and RATIFIES what survived of
+both.** Per §A.7, neither is edited in place: each carries a notice at its head and its
+reasoning is left standing, because in both cases the reasoning outlived the conclusion.
+
+### The retirement, and the tag-sheet consequence
+
+`@mint:` — `sha256(genesis + ordinal + ts + source + body)` — was retired on evidence, not on
+preference: `verify` across every real pile, **76 blocks, `edited in place` reported zero
+times**, 45 of them carrying no mint at all. It had cost something on every capture and every
+read, and had never once caught anything.
+
+**The finding that generalises past this tool.** Every ingredient except `body` was *already
+stated readably on the same header line* — genesis is the file you are reading, ordinal is the
+block's position in it, `ts` is the timestamp column, `source` is `@source:`. So the header
+stated the same facts twice: once where a human could read them, and once folded into 64
+characters no human can read — **and the unreadable copy was the one called "identity."**
+
+Including `body` then fused two requirements that point in opposite directions:
+
+> **An identity must be stable across every correction that leaves the saying intact. An
+> integrity check must be disturbed by exactly those corrections.** Fusing them means one of
+> them is always wrong.
+
+**Three questions, three answers, and this is the shape to carry to any future key:**
+
+| question | key |
+|---|---|
+| *which thing is this* | the `#id` — issued at capture, derived from nothing about the content |
+| *where did it come from* | the provenance tags, readable |
+| *is it as it was* | `@sealed:` — **opt-in**, on the blocks that warrant it |
+
+### The bifurcation ruling this sits under (Charter §0.1)
+
+The Charter gained a preamble section on 2026-08-05 that renames the technique this appendix
+has been using throughout: **"bifurcation" is the name of the navigation, not of a split.**
+*Find the point where one mechanism is being asked to serve both forces, and give each force
+its own mechanism.* A single value doing two jobs is not merely untidy — it is the tension
+**collapsed instead of navigated**, and it will always be resolved in the machine's favour,
+because the machine's half is the half that has to run.
+
+Its portable test, which now governs every key on this sheet: **what does this ask of someone
+who has simply thought again?** The answer should usually be *nothing*.
+
+### The provenance cut — RULED 2026-08-06
+
+A.12 asked whether `@source:` belonged inside the seal and answered yes. It never asked why
+`@origin:` and `@attests:` were outside it. The answer turned out to be the same unexamined
+inheritance A.12 diagnosed: `gen_id` predates both keys.
+
+**Asked properly, the three keys do not want the same treatment, and the axis that separates
+them is not subject-matter but whether the claim is allowed to move:**
+
+| key | what kind of claim | sealed? |
+|---|---|---|
+| **`@source:`** | *whose saying is this* — a **citation**, fixed at the moment it was made | **yes** |
+| **`@origin:`** | human or ai — a **judgement**, and reworking an AI draft by hand until it is yours is a real case of it honestly changing | no |
+| **`@attests:`** | *who vouches for this* — an explicitly **current** stance | **no, necessarily** |
+
+**Sealing `@attests:` would freeze a relation whose whole nature is that it moves.** Coming to
+stand behind something, or withdrawing from it, *is* thinking again — the §0.1 test answers
+this one directly.
+
+**And the fact that decided it: `@source:` takes any value at all.** `self`, `claude`,
+`Steiner`, `a-dream-I-had`. It was documented as a near-closed list of AI names, which made it
+look like a machine-checkable provenance field. It is not one. It is a **citation of voice** —
+which is exactly the kind of claim that seals honestly, and the reason A.12's argument survives
+its mechanism.
+
+**The vocabulary already held this distinction and nobody had pointed it at provenance:**
+
+> `@source:` is the **`@defines:`** of provenance — a birth certificate, fixed.
+> `@attests:` is the **`@name:`** of provenance — whatever currently holds, moving freely,
+> nothing owed on the change.
+
+A portable test for any future key follows from it: **is this a birth certificate or a
+dictionary entry?** Birth certificates seal. Dictionary entries must not.
+
+**NAMED LIMIT, declared (§3.8):** `@origin:ai` → `@origin:human` is silent **even on a sealed
+block**, and on an unsealed block every provenance key is. Both are consequences of the ruling
+above, not gaps in it, and the documentation states them.
+
+### `@seals:` — a check must declare its own scope
+
+**The defect, and it is one this project has a name for.** `@sealed:<hex>` recorded a digest
+and said nothing about what the digest covered. The scope lived in the tool's source, so a
+reader with the tool switched off could not learn what their own seal protected. That is a
+**prior baked into the procedure and never asked for** — the CLEAN-versus-MEM distinction from
+radio astronomy, where a reconstruction that silently assumes a model is not the same artifact
+as one that states it.
+
+**And it is a §0.1 bifurcation:** one token was carrying both *the digest* and, invisibly,
+*the claim about what the digest binds.* Two jobs, one value.
+
+**Built:** `capture --seal` now writes `@seals:body-ts-source` beside `@sealed:<hex>`. `scribe
+tag` refuses both. `verify` reads the scope off the block and **names it in its own report**,
+alongside what it did not check — generalising the pattern `toc` has always had (*"NOT shown by
+this index: …"*) to the one verb whose entire job is telling you whether to trust a block.
+
+**Why it matters beyond tidiness, and this is the durable reason:** a seal written today stays
+interpretable if the formula ever widens. Without a declared scope, widening the recipe would
+make every existing seal ambiguous — unverifiable and indistinguishable from a broken one.
+**The declaration is what keeps the ruling above reversible**, which a ruling made once, on one
+day, ought to be.
+
+*Credit: the scope-disclosure gap was spotted by Opus reading a session transcript rather than
+by anyone using the tool — the second reader catching what the first could not.*

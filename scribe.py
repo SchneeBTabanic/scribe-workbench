@@ -46,7 +46,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 
-VERSION = "1.4.1"
+VERSION = "1.5.0"
 
 # The one external process the HTML path shells to. Recorded for provenance (§4.4); the
 # tool discloses the running pandoc via `scribe doctor` and hard-fails if it is absent.
@@ -466,6 +466,80 @@ MINT_KEY = "mint"
 # disclosure while satisfying it.
 SEAL_KEY = "sealed"
 
+# `@seals:` — WHAT THE DIGEST COVERS, declared in the file beside the digest itself.
+#
+# THE DEFECT IT CLOSES. `@sealed:<hex>` recorded a result and said nothing about its scope,
+# so a reader with the tool switched off could not learn what their own seal protected. The
+# coverage lived in gen_seal's source and nowhere else. That is a PRIOR BAKED INTO THE
+# PROCEDURE AND NEVER ASKED FOR -- radio astronomy's CLEAN-versus-MEM distinction, where a
+# reconstruction that silently assumes a model is not the same artifact as one that states
+# it. §4.3 (readable with the tool off) is the clause; `toc`'s "NOT shown by this index:"
+# line is the pattern, which had simply never been generalized to the one verb whose entire
+# job is telling you whether to trust a block.
+#
+# AND IT IS A §0.1 BIFURCATION. One token was carrying both the digest AND, invisibly, the
+# claim about what the digest binds. Two jobs, one value, the tension collapsed rather than
+# navigated -- and resolved in the machine's favour, because the machine's half is the half
+# that has to run.
+#
+# THE DURABLE REASON, past tidiness: a seal written today stays interpretable if the recipe
+# ever widens. Without a declared scope, widening gen_seal would make every existing seal
+# ambiguous -- unverifiable, and indistinguishable from a broken one. The declaration is what
+# keeps the 2026-08-06 provenance ruling REVERSIBLE, which a ruling made once, on one day,
+# ought to be.
+SEALS_KEY = "seals"
+
+# The scope token, ordered so it is canonical rather than merely descriptive. Header-safe by
+# construction (no whitespace). If gen_seal ever widens, this string changes WITH it and old
+# blocks keep declaring the scope they were actually sealed under -- which is the entire point.
+SEALED_AT_KEY = "sealed-at"
+
+# THE SEAL MOMENT, and why it is not optional once a seal can be taken LATER.
+#
+# RULED 2026-08-06 by the sovereign: *"If I am the creator of something and I reach a state
+# with it from work done that I want then sealed, then I must be able to do that. The moment
+# of capture is not necessarily the thing that must always be sealed. Declaring something can
+# also be an act about some worked-on thing that comes later."* That is correct, and it is
+# §0.1's own test read forwards: a declaration is an ACT, and an act has its own moment.
+#
+# THE CONSEQUENCE, which is what makes this a format change rather than a new flag: a seal
+# taken later cannot vouch that a body is *as captured*. It vouches that the body is *as
+# sealed*, and the tool has no way of knowing what happened in between. Without a recorded
+# seal moment, `verify` would be asserting a fact it cannot hold. WITH one, the two claims a
+# keeper might make are finally distinguishable in the file:
+#
+#   sealed at birth      @sealed-at: == the block's own timestamp — "held from the start"
+#   sealed on reflection @sealed-at:  > the block's own timestamp — "I worked on this, and
+#                                       THIS is the state I want held"
+#
+# It is inside the digest, not beside it. A seal moment that could be edited freely would be
+# a claim about when a claim was made, forgeable by the same hand — which is the shape of
+# nothing at all.
+SEAL_SCOPE = "body-ts-source-sealedat"
+
+# The scope written by 1.5.0's first cut, before sealing could happen after capture. Still
+# re-derivable, because a block declaring it says so on its own face. This constant is the
+# proof that `@seals:` was worth building: the recipe widened ONE DAY after it shipped, and
+# nothing already sealed became ambiguous.
+SEAL_SCOPE_V1 = "body-ts-source"
+
+# What a seal does NOT cover, named because §3.8 refuses an undisclosed exclusion, and stated
+# HERE so the one place that defines the scope also defines its complement.
+#
+# RULED 2026-08-06 by the sovereign, and the axis is not subject-matter but whether the claim
+# is ALLOWED TO MOVE:
+#   @source:   whose saying is this -- a CITATION, a claim about a fixed past.      SEALED.
+#   @origin:   human or ai -- a JUDGEMENT; reworking an AI draft by hand until it
+#              is yours is a real case of it honestly changing.                     not sealed.
+#   @attests:  who vouches for this -- an explicitly CURRENT stance. Sealing it
+#              would freeze a relation whose whole nature is that it moves, and
+#              coming to stand behind something IS thinking again (§0.1).           not sealed.
+# The vocabulary already held this split and nobody had pointed it at provenance: `@source:`
+# is the `@defines:` of provenance (a birth certificate), `@attests:` is its `@name:` (a
+# dictionary entry). Birth certificates seal; dictionary entries must not.
+SEAL_EXCLUDES = ("the revisable vocabulary (@topic:, @act:, @path:, …), "
+                 "@origin: and @attests:")
+
 # THE KIND-DECLARATION. A tool that issues identifiers must say which kind it issues, in
 # band, rather than inheriting a default — because an unruled default is indistinguishable
 # from law once it is in the artifact, which is exactly how the old 4-hex id shipped.
@@ -562,7 +636,7 @@ def _insert_before_digest(tags, new_tag):
     Keeps the human-facing vocabulary, and any status marker, on the readable side of the
     64 hex."""
     for i, (k, _) in enumerate(tags):
-        if k in (SEAL_KEY, MINT_KEY):
+        if k in (SEAL_KEY, SEALS_KEY, SEALED_AT_KEY, MINT_KEY):
             return tags[:i] + [new_tag] + tags[i:]
     return tags + [new_tag]
 
@@ -622,7 +696,7 @@ def genesis_of(text, path):
     return hashlib.sha256(os.path.abspath(path).encode("utf-8")).hexdigest(), False
 
 
-def gen_seal(body, ts, source):
+def gen_seal(body, ts, source, sealed_at=None):
     """@identity:none — OPT-IN, and IT IS NOT AN IDENTITY. Issued only when asked for.
 
     The kind-declaration reads `none` because the lint that reads it (TestIdentityKindGuards,
@@ -650,9 +724,16 @@ def gen_seal(body, ts, source):
     re-filing a tamper event.
 
     NOT TRUNCATED, ever — unlike the handle, this one has no reason to be short, because
-    nobody types it and nothing resolves against it. It is read by a machine or not at all."""
+    nobody types it and nothing resolves against it. It is read by a machine or not at all.
+
+    `sealed_at` is WHEN THE SEAL WAS TAKEN, which is not always when the block was declared.
+    Passing None re-derives under the pre-2026-08-06 scope (SEAL_SCOPE_V1), which is how a
+    block sealed by an earlier scribe keeps verifying instead of going ambiguous."""
+    if sealed_at is None:
+        return hashlib.sha256(
+            f"{ts}\x00{source}\x00{body}".encode("utf-8")).hexdigest()
     return hashlib.sha256(
-        f"{ts}\x00{source}\x00{body}".encode("utf-8")).hexdigest()
+        f"{ts}\x00{source}\x00{sealed_at}\x00{body}".encode("utf-8")).hexdigest()
 
 
 def gen_handle(ts, taken=None):
@@ -984,7 +1065,15 @@ def make_block(raw_body, tags, source, ts=None, annotations=None,
     # the end of the line. The difference is that now the line usually HAS no digest, because
     # the seal is asked for rather than imposed. `scribe keys` excludes it and says so.
     if seal:
-        tags.append((SEAL_KEY, gen_seal(audited_body, ts, source)))
+        # Sealed AT BIRTH, so the seal moment IS the declaring moment. Written out rather
+        # than left implicit: a reader must not have to infer which of the two kinds of seal
+        # this is by comparing two fields, and a later `scribe seal` writes a different value
+        # into the same slot.
+        # The readable declarations go FIRST, so the eye meets `when` and `what this covers`
+        # before it meets the hash.
+        tags.append((SEALED_AT_KEY, ts))
+        tags.append((SEALS_KEY, SEAL_SCOPE))
+        tags.append((SEAL_KEY, gen_seal(audited_body, ts, source, ts)))
     return Block(id=handle, ts=ts, tags=tags, body=audited_body), findings
 
 
@@ -1096,10 +1185,43 @@ NOT_SEALED = "not sealed — this check did not run"
 # rather than reporting an absence of evidence as evidence.
 LEGACY_MINT = "carries a retired @mint: — not re-derivable, not checked"
 
+# A seal declaring a scope THIS BUILD does not know how to re-derive — a block sealed by
+# a later scribe, met by an earlier one. Reported as undecidable rather than as broken:
+# §3.8 again, and the precise reason `@seals:` exists.
+UNKNOWN_SCOPE = "declares a seal scope this scribe cannot re-derive — not checked"
+
+
+# A seal written before `@seals:` existed (scribe 1.4.0-1.4.1). Its scope is not stated on
+# the block, so it is ASSUMED -- and the assumption is disclosed rather than made silently,
+# exactly as genesis_of discloses its own fallback. This is the only case where scribe reads
+# a seal whose scope it had to guess, and it is a closed historical set.
+UNDECLARED_SCOPE = "scope not declared on the block — assumed " + SEAL_SCOPE_V1
+
+
+def seal_scope_of(block):
+    """What this block's seal declares it covers. Returns (scope, is_declared)."""
+    declared = _tag_value(block, SEALS_KEY)
+    if declared:
+        return declared, True
+    return SEAL_SCOPE_V1, False
+
 
 def rederive_seal(block):
-    """The seal this block would receive if it were sealed, now, from what the file says."""
-    return gen_seal(block.body, block.ts, _tag_value(block, "source") or "unknown")
+    """The seal this block would receive if it were sealed, now, from what the file says.
+
+    Re-derives under the scope the BLOCK declares, not under whatever the current recipe
+    happens to be. That is what lets the recipe widen later without making every existing
+    seal ambiguous -- an unverifiable seal and a broken one must never look the same (§3.8)."""
+    scope, _ = seal_scope_of(block)
+    source = _tag_value(block, "source") or "unknown"
+    if scope == SEAL_SCOPE_V1:
+        return gen_seal(block.body, block.ts, source)
+    if scope == SEAL_SCOPE:
+        at = _tag_value(block, SEALED_AT_KEY)
+        if not at:
+            return None      # declares a moment it does not carry; undecidable, not broken
+        return gen_seal(block.body, block.ts, source, at)
+    return None              # a scope this build cannot re-derive; reported, never guessed
 
 
 def audit_seals(blocks, genesis=None):
@@ -1115,12 +1237,19 @@ def audit_seals(blocks, genesis=None):
     for b in real:
         stored = _tag_value(b, SEAL_KEY)
         if stored:
-            states.append(AS_SEALED if stored == rederive_seal(b) else CHANGED_SINCE_SEAL)
+            fresh = rederive_seal(b)
+            if fresh is None:
+                states.append(UNKNOWN_SCOPE)
+            else:
+                states.append(AS_SEALED if stored == fresh else CHANGED_SINCE_SEAL)
         elif _tag_value(b, MINT_KEY):
             states.append(LEGACY_MINT)
         else:
             states.append(NOT_SEALED)
     return {"states": states,
+            "undeclared": sum(1 for b in real
+                              if _tag_value(b, SEAL_KEY) and not _tag_value(b, SEALS_KEY)),
+            "unknown_scope": sum(1 for s in states if s == UNKNOWN_SCOPE),
             "sealed": sum(1 for s in states if s in (AS_SEALED, CHANGED_SINCE_SEAL)),
             "unsealed": sum(1 for s in states if s == NOT_SEALED),
             "legacy": sum(1 for s in states if s == LEGACY_MINT),
@@ -1607,7 +1736,7 @@ def render_verify_export(manifest, blocks, key, value, recent=False):
     return "\n".join(lines) + "\n"
 
 
-def push_view(view_text, pile_blocks, genesis=None):
+def push_view(view_text, pile_blocks, genesis=None, seal=False):
     """Push edits made in a working view back into the canonical pile by #id (the
     detangle round-trip). **APPENDS A SUPERSEDING BLOCK — it never overwrites one.**
 
@@ -1648,7 +1777,7 @@ def push_view(view_text, pile_blocks, genesis=None):
     dupes = duplicate_handles(pile_blocks)
     ambiguous = sorted({vb.id for vb in view_blocks if vb.id in dupes})
     blank = {"superseded": [], "missing": [], "tag_drift": [], "ambiguous": {},
-             "already_superseded": []}
+             "already_superseded": [], "seal_dropped": [], "sealed": []}
     if ambiguous:
         return pile_blocks, dict(blank, ambiguous={h: dupes[h] for h in ambiguous})
 
@@ -1656,6 +1785,7 @@ def push_view(view_text, pile_blocks, genesis=None):
     taken = {b.id for b in pile_blocks if b.id}
     ordinal = len([b for b in pile_blocks if b.id])
     superseded, missing, tag_drift, already = [], [], [], []
+    seal_dropped, sealed_now = [], []
     appended = []
 
     for vb in view_blocks:
@@ -1679,15 +1809,41 @@ def push_view(view_text, pile_blocks, genesis=None):
         ordinal += 1
         # The new block inherits the old block's vocabulary so it appears in every view the
         # old one did — a supersession that fell out of its own topic would be a silent loss.
-        # Its identity is issued fresh. Neither the retired `@mint:` nor a `@sealed:` is ever
-        # carried across: a seal is a claim about a body, and this is a different body. If the
-        # superseded block was sealed, the new one is sealed only by being sealed again.
+        # Its identity is issued fresh. Neither the retired `@mint:` nor the OLD block's
+        # `@sealed:` is ever carried across: that digest is a claim about a different body.
         carried = [(k, v) for k, v in pb.tags
-                   if k not in (MINT_KEY, SEAL_KEY, SUPERSEDED_KEY, REPLACES_KEY)]
+                   if k not in (MINT_KEY, SEAL_KEY, SEALS_KEY, SEALED_AT_KEY,
+                                SUPERSEDED_KEY, REPLACES_KEY)]
         new_tags = carried + [(REPLACES_KEY, f"#{pb.id}")]
+        # A SEAL IS ASKED FOR, NEVER ASSUMED — RULED 2026-08-06.
+        #
+        # Until now, pushing a revision of a sealed block silently issued a fresh seal over
+        # the new body. `amend` had already refused the same act in so many words: "amending
+        # it would either break that seal or forge a NEW ONE IN YOUR NAME. Neither is this
+        # tool's to do." Two verbs, opposite answers, and the one that argued its case was
+        # the one that had thought about it.
+        #
+        # THE SHARPEST OBJECTION, and the reason it is a §0.1 bifurcation rather than a
+        # preference: NOBODY DECLARED ANY OF THE INPUTS. The body is the human's, the
+        # timestamp is the push moment, and `@source:` is INHERITED from the superseded
+        # block. So the tool was freezing a citation nobody made this time — the same
+        # unexamined-inheritance shape as `gen_id` carrying `source` into the mint, one level
+        # down, and directly against the ruling that `@source:` seals honestly BECAUSE it is
+        # a claim someone made at a moment.
+        #
+        # BUT THE SILENCE WAS THE REAL FAULT, and dropping the seal quietly would only move
+        # it. Whichever way this defaults, push must SAY what became of the seal (§3.7), so
+        # a keeper never discovers months later that a lineage they meant to hold has been
+        # unsealed since its first revision. Both outcomes are recorded and both are printed.
         if _tag_value(pb, SEAL_KEY):
-            new_tags.append(
-                (SEAL_KEY, gen_seal(vb.body, ts, _tag_value(pb, "source") or "unknown")))
+            if seal:
+                src = _tag_value(pb, "source") or "unknown"
+                new_tags.append((SEALED_AT_KEY, ts))
+                new_tags.append((SEALS_KEY, SEAL_SCOPE))
+                new_tags.append((SEAL_KEY, gen_seal(vb.body, ts, src, ts)))
+                sealed_now.append((pb.id, handle))
+            else:
+                seal_dropped.append((pb.id, handle))
         appended.append(Block(id=handle, ts=ts, tags=new_tags, body=vb.body))
         # THE ONE PERMITTED WRITE onto an existing block: a status tag. Its body and its
         # identity are not touched, and this is asserted directly in the guard-set.
@@ -1699,7 +1855,7 @@ def push_view(view_text, pile_blocks, genesis=None):
 
     return pile_blocks + appended, dict(
         blank, superseded=superseded, missing=missing, tag_drift=tag_drift,
-        already_superseded=already)
+        already_superseded=already, seal_dropped=seal_dropped, sealed=sealed_now)
 
 
 def add_tags(blocks, block_id, add=None, remove=None):
@@ -1721,6 +1877,12 @@ def add_tags(blocks, block_id, add=None, remove=None):
     _frozen = {SEAL_KEY: ("a seal over a body, issued by `capture --seal` at the moment that "
                           "body was declared. Writing one by hand would be asserting the "
                           "check rather than performing it"),
+               SEALED_AT_KEY: ("the moment a seal was taken. It is inside the digest, so "
+                               "writing one by hand would be dating a claim nobody made"),
+               SEALS_KEY: ("the DECLARED SCOPE of a seal — what the digest beside it covers. "
+                           "It is a statement about a check that ran, so only the thing that "
+                           "ran the check may write it; by hand it would be a claim about "
+                           "coverage nobody verified"),
                MINT_KEY: ("a retired identity, issued 2026-08-01..04. It is kept readable "
                           "and is never edited")}
     for key, why in _frozen.items():
@@ -2184,21 +2346,49 @@ def cmd_verify(args):
         # count had not, and there is no per-block act to take from reading them. Where they
         # are is a `grep`, and the line below says which one.
         for b, s in zip(blocks, states):
-            if s != CHANGED_SINCE_SEAL:
+            if s not in (CHANGED_SINCE_SEAL, UNKNOWN_SCOPE):
                 continue
             first = (b.body.splitlines() or [""])[0][:56]
-            sys.stdout.write(f"    #{b.id}  {b.ts}  {s}\n      {first!r}\n")
-        undetermined += n_changed
+            scope, was_declared = seal_scope_of(b)
+            note = f"  [seals: {scope}]" if was_declared else f"  [{UNDECLARED_SCOPE}]"
+            sys.stdout.write(f"    #{b.id}  {b.ts}  {s}{note}\n      {first!r}\n")
+        undetermined += n_changed + rep["unknown_scope"]
+
+        # NAME THE SCOPE, ALWAYS — the CLEAN-versus-MEM rule. A check that reports only what
+        # it looked at reads as a clean bill for everything else, and a scope that lives in
+        # this file's source rather than on the block is a prior nobody was asked for. `toc`
+        # has always printed "NOT shown by this index:"; this is that pattern reaching the one
+        # verb whose entire job is telling you whether to trust a block.
+        if rep["sealed"] or rep["unknown_scope"]:
+            sys.stdout.write(
+                f"  WHAT A SEAL HERE COVERS: {SEAL_SCOPE.replace('-', ', ')}.\n"
+                f"  OUTSIDE IT, and therefore NOT checked by any result above:\n"
+                f"    {SEAL_EXCLUDES}.\n"
+                "  Those may have changed and would not show here. That is the ruling, not a\n"
+                "  gap: re-filing a block as your thinking moves is ordinary work, and who\n"
+                "  vouches for a saying is allowed to change.\n")
+        if rep["undeclared"]:
+            sys.stdout.write(
+                f"  {rep['undeclared']} seal(s) carry no @seals: — written before a seal\n"
+                f"  declared its own scope (scribe 1.4.0-1.4.1). Their scope was ASSUMED to be\n"
+                f"  {SEAL_SCOPE}, which is what that build sealed. Said out loud because an\n"
+                "  assumed scope and a declared one must never look the same.\n")
+        if rep["unknown_scope"]:
+            sys.stdout.write(
+                f"  {rep['unknown_scope']} block(s) declare a seal scope this scribe "
+                "cannot re-derive —\n"
+                "  they were sealed by a LATER scribe than this one. Reported as undecided, not\n"
+                "  as broken: an unverifiable seal and a failed one must never look alike.\n"
+                "  Upgrade scribe to check them.\n")
 
         if n_changed:
             sys.stdout.write(
                 "  'Changed since it was sealed' is a STATEMENT, not a complaint: it is the\n"
                 "  second doorway working as ruled — the block was corrected in the file, keeping\n"
                 "  that history in your backups rather than in the pile. Precisely, it means the\n"
-                "  block is not the one its @sealed: was issued for; a seal covers the BODY, the\n"
-                "  TIMESTAMP and @source:, so a change to any of the three says so here. What it\n"
-                "  cannot tell you is WHAT changed — no earlier text is kept in the pile, by\n"
-                "  design, so only restic or git holds the before.\n")
+                "  block is not the one its @sealed: was issued for, under the scope that block\n"
+                "  declares. What it cannot tell you is WHAT changed — no earlier text is kept\n"
+                "  in the pile, by design, so only restic or git holds the before.\n")
         if rep["unsealed"]:
             sys.stdout.write(
                 f"  {rep['unsealed']} of {len(blocks)} block(s) carry no @sealed:, so THE CHECK DID\n"
@@ -2377,11 +2567,13 @@ def cmd_push(args):
     _refuse_if_malformed(pile_text, args.pile)
     pile_blocks = parse_pile(pile_text)
     genesis, declared = genesis_of(pile_text, args.pile)
-    pile_blocks, report = push_view(view_text, pile_blocks, genesis=genesis)
+    pile_blocks, report = push_view(view_text, pile_blocks, genesis=genesis,
+                                    seal=getattr(args, 'seal', False))
     if not declared and report["superseded"]:
         sys.stderr.write(
-            f"  NOTE: {args.pile} carries no @genesis: line (a pile born before 2026-08-01); "
-            f"the superseding block's mint falls back to the pile's PATH alone.\n")
+            f"  NOTE: {args.pile} carries no @genesis: line, so its birth moment is not "
+            f"recorded. Nothing depends on it — the pile itself is the namespace — and the "
+            f"superseding block's identity is issued from its own declaring moment.\n")
     if report.get("ambiguous"):
         sys.stderr.write(
             f"REFUSED: nothing written to {args.pile}. "
@@ -2410,13 +2602,25 @@ def cmd_push(args):
         f"pushed home: {n} block(s) superseded — nothing was overwritten\n"
         if n else "pushed home: nothing changed (no body differed)\n")
     for old, new in report["superseded"]:
-        sys.stderr.write(f"  #{old} -> #{new}   (#{old} keeps its body and its @mint:, and "
+        sys.stderr.write(f"  #{old} -> #{new}   (#{old} keeps its body and its identity, and "
                          f"gains one tag: @superseded:#{new})\n")
     if n:
         sys.stderr.write(
             "  The old blocks are still there and still say what they said. To correct one\n"
             "  WITHOUT leaving that history in the pile, edit it directly in your editor —\n"
             "  restic keeps that history instead. Both doors are yours; this one is push's.\n")
+    # WHAT BECAME OF THE SEAL — said either way, because the silence was the fault.
+    for old_id, new_id in report["seal_dropped"]:
+        sys.stderr.write(
+            f"  #{old_id} was SEALED; #{new_id} is NOT. A seal is a claim about a body, and\n"
+            f"  this is a different body — so it is yours to make, not push's to assume.\n"
+            f"  `scribe push --seal` makes it, over the new body, now. #{old_id} keeps its\n"
+            f"  own seal and still verifies.\n")
+    for old_id, new_id in report["sealed"]:
+        sys.stderr.write(
+            f"  #{new_id} SEALED over its new body, as asked (@seals:{SEAL_SCOPE}). Note the\n"
+            f"  attribution was inherited from #{old_id}: if @source: is no longer right for\n"
+            f"  this wording, it is now frozen — correct it and re-push, or seal by hand.\n")
     if report["already_superseded"]:
         sys.stderr.write(
             f"  SKIPPED {len(report['already_superseded'])} block(s) already superseded — "
@@ -2667,6 +2871,145 @@ def cmd_amend(args):
     return 0
 
 
+def cmd_seal(args):
+    """Seal a block that already exists — RULED 2026-08-06.
+
+    THE ARGUMENT, in the sovereign's words: *"If I am the creator of something and I reach a
+    state with it from work done that I want then sealed, then I must be able to do that. The
+    moment of capture is not necessarily the thing that must always be sealed. Declaring
+    something can also be an act about some worked-on thing that comes later."*
+
+    That is right, and the asymmetry it removes was never ruled — it was inherited. `--seal`
+    lived on `capture` because `capture` was where seals were invented, and `tag` refused the
+    key, so a block unsealed at birth could never be sealed at all. **Sealing was opt-in at
+    exactly one instant, which is not what opt-in means.**
+
+    WHY THIS IS NOT `scribe tag --tag sealed:` WEARING A HAT. That refusal stands, and is the
+    reason this verb has to exist: a seal must be PERFORMED, never asserted. `tag` would let a
+    human type a digest; this computes one over the body actually present, at a moment it
+    records. The refusal was never about the key being untouchable — it was about who may make
+    the claim, and the answer is: the thing that can check it.
+
+    WHAT IT REFUSES, and each refusal is a claim the tool would otherwise make on your behalf:
+      - an already-sealed block. Re-sealing would overwrite a declaration someone made, at the
+        moment they made it, leaving no record it had ever been different. `unseal` first, and
+        mean it.
+      - a superseded block. A later block has retired that wording; freezing it now declares a
+        held state for something the pile already says you moved on from."""
+    with open(args.pile, "r", encoding="utf-8") as fh:
+        text = fh.read()
+    _refuse_if_malformed(text, args.pile)
+    blocks = parse_pile(text)
+    try:
+        target = resolve_handle(blocks, args.id)
+    except AmbiguousHandle as e:
+        sys.stderr.write(f"REFUSED: {e}\n")
+        return 1
+    if target is None:
+        sys.stderr.write(f"REFUSED: no block #{args.id.lstrip('#')} in {args.pile}\n")
+        return 1
+    if _tag_value(target, SEAL_KEY):
+        at = _tag_value(target, SEALED_AT_KEY)
+        sys.stderr.write(
+            f"REFUSED: #{target.id} is already sealed{f' (taken {at})' if at else ''}.\n"
+            "  Re-sealing would overwrite a declaration already made, at the moment it was\n"
+            f"  made, leaving no record it had been different. `scribe unseal '#{target.id}'\n"
+            f"  {args.pile}` withdraws it first, if that is what you mean.\n")
+        return 1
+    if is_superseded(target):
+        sys.stderr.write(
+            f"REFUSED: #{target.id} carries @superseded: — a later block replaced it.\n"
+            "  Sealing it now would declare a held state for a wording the pile already says\n"
+            "  you moved on from. Seal the block that replaced it instead.\n")
+        return 1
+
+    at = args.ts or now_ts()
+    source = _tag_value(target, "source") or "unknown"
+    target.tags = target.tags + [(SEALED_AT_KEY, at), (SEALS_KEY, SEAL_SCOPE),
+                                 (SEAL_KEY, gen_seal(target.body, target.ts, source, at))]
+    _atomic_write(args.pile, serialize_pile(blocks))
+
+    sys.stderr.write(
+        f"sealed #{target.id} — the body now in the pile is held as it stands.\n"
+        f"  covers: {SEAL_SCOPE.replace('-', ', ')}   (@source:{source})\n"
+        f"  taken:  {at}\n")
+    if at != target.ts:
+        sys.stderr.write(
+            f"  declared: {target.ts} — so this is a seal ON REFLECTION, not one taken at\n"
+            "  birth. `verify` will say whether the body is as SEALED. It cannot say whether\n"
+            "  it changed between being declared and being sealed, and will not pretend to.\n")
+    sys.stderr.write(
+        f"  `scribe amend` no longer works on #{target.id} — that is what sealing means.\n"
+        f"  `scribe unseal` withdraws it, and owes the pile nothing when you do.\n")
+    return 0
+
+
+def cmd_unseal(args):
+    """Withdraw a seal — the mirror of `scribe seal`, RULED 2026-08-06.
+
+    THE ARGUMENT, brought by the sovereign from an inner project rather than this one: *"We
+    work on an inner, then freeze it at the time of our choosing. Conversely, if you freeze it
+    and I want to work on it again, then I must have the chance to unfreeze it — especially if
+    the time of its use and implementation has not yet arrived."*
+
+    WHY THIS IS NOT A HOLE IN THE SEAL. The human could always remove one by hand — `amend`'s
+    own refusal says so: *"If the seal was a mistake, remove it by hand — that is your doorway
+    and it stays open."* Withholding the verb protected nothing. It only made a sanctioned act
+    awkward and unspeakable, which is the same inherited asymmetry `scribe seal` removed at the
+    other end.
+
+    WHAT A SEAL ACTUALLY IS, which decides how this must behave. It is not a historical event.
+    It is **a claim the keeper is currently making**: *I hold this as it stands.* That puts it
+    in the same family as `@attests:`, which the 2026-08-06 provenance ruling deliberately left
+    outside the seal because it is an explicitly current stance — and *coming to stand behind
+    something, or stepping back from it, IS thinking again.*
+
+    So by §0.1's test — *what does this ask of someone who has simply thought again?* —
+    **NOTHING IS WRITTEN AND NOTHING IS MARKED.** No `@unsealed:`, no counter, no trace. A
+    permanent record of having changed your mind about holding something is exactly the
+    paperwork this project refuses. The block becomes ordinary again, as if never sealed.
+
+    THE COST, named rather than hidden: unseal then re-seal, and the new `@sealed-at:` is the
+    new moment, with nothing saying the block was once held under an older one. A keeper who
+    wants that history has `push`, which keeps history, or their backups. The tool binds
+    itself, not the human (§3.1)."""
+    with open(args.pile, "r", encoding="utf-8") as fh:
+        text = fh.read()
+    _refuse_if_malformed(text, args.pile)
+    blocks = parse_pile(text)
+    try:
+        target = resolve_handle(blocks, args.id)
+    except AmbiguousHandle as e:
+        sys.stderr.write(f"REFUSED: {e}\n")
+        return 1
+    if target is None:
+        sys.stderr.write(f"REFUSED: no block #{args.id.lstrip('#')} in {args.pile}\n")
+        return 1
+    if not _tag_value(target, SEAL_KEY):
+        sys.stderr.write(
+            f"REFUSED: #{target.id} carries no @sealed: — there is nothing to withdraw.\n"
+            "  It is already an ordinary, correctable block.\n")
+        return 1
+
+    was_at = _tag_value(target, SEALED_AT_KEY)
+    state = audit_seals([target])["states"][0]
+    target.tags = [(k, v) for k, v in target.tags
+                   if k not in (SEAL_KEY, SEALS_KEY, SEALED_AT_KEY)]
+    _atomic_write(args.pile, serialize_pile(blocks))
+
+    sys.stderr.write(
+        f"unsealed #{target.id} — an ordinary block again, and correctable.\n"
+        f"  the seal withdrawn was taken {was_at or '(moment not recorded)'}; at withdrawal\n"
+        f"  the body read '{state}'.\n"
+        "  NOTHING WAS MARKED. No tag records that this block was ever sealed, and none\n"
+        "  will be: a seal is a claim you are currently making, not an event, and changing\n"
+        "  your mind about holding something owes the pile nothing.\n"
+        f"  `scribe amend` works on it again. `scribe seal '#{target.id}' {args.pile}` holds\n"
+        "  it once more, at whatever moment you choose — and that moment is what is\n"
+        "  recorded, not this one.\n")
+    return 0
+
+
 def cmd_doctor(args):
     """Disclose the frozen artifact and its runtime dependency (§3.7 / §4.4): the
     scribe.py SHA-256 (compare against PROVENANCE.md), the Python version, and the
@@ -2766,7 +3109,7 @@ def build_parser():
     b.add_argument("file", nargs="?", default="-")
     b.set_defaults(func=cmd_blocks)
 
-    v = sub.add_parser("view", help="derive a working view (topic:/state:) from the pile")
+    v = sub.add_parser("view", help="derive a working view (any key:value) from the pile")
     v.add_argument("selector", help="key:value, e.g. topic:nas or state:live")
     v.add_argument("pile")
     v.add_argument("--current", action="store_true",
@@ -2791,11 +3134,12 @@ def build_parser():
     dp.set_defaults(func=cmd_duplicates)
 
     vf = sub.add_parser("verify",
-                        help="is each block still the one its @mint: was issued for? "
-                             "re-derives "
-                             "every @mint: from the file itself and says what happened — "
-                             "'as captured' / 'edited in place since capture'. Read-only, "
-                             "no severities: a hand-edit is a sanctioned act, not a fault")
+                        help="is each SEALED block still the one its seal was issued for? "
+                             "re-derives every seal from the file itself, under the scope "
+                             "the block declares, and says what happened — 'as sealed' / "
+                             "'changed since it was sealed' / 'not sealed, so this check "
+                             "did not run'. Read-only, no severities: a hand-edit is a "
+                             "sanctioned act, not a fault")
     vf.add_argument("pile", nargs="+", help="one or more piles to audit")
     vf.set_defaults(func=cmd_verify)
 
@@ -2867,6 +3211,11 @@ def build_parser():
     ph = sub.add_parser("push", help="push edits in a view back into the pile by #id")
     ph.add_argument("view", help="the edited view file")
     ph.add_argument("pile")
+    ph.add_argument("--seal", action="store_true",
+                    help="seal the superseding block over its NEW body. Only meaningful "
+                         "where the block being superseded was itself sealed: without this, "
+                         "the new block is NOT sealed and push says so. A seal is asked "
+                         "for, never assumed")
     ph.set_defaults(func=cmd_push)
 
     tg = sub.add_parser("tag", help="add/remove tags on a block by id (in place)")
@@ -2887,6 +3236,23 @@ def build_parser():
     st.add_argument("--show", action="store_true",
                     help="print the stamp text without writing anything")
     st.set_defaults(func=cmd_stamp)
+
+    sl = sub.add_parser("seal",
+                        help="seal a block that already exists — freeze the body now in the "
+                             "pile, recording WHEN the seal was taken. A declaration is an "
+                             "act, and an act may come after the capture it is about")
+    sl.add_argument("id", help="block id, e.g. 50c1 or #50c1")
+    sl.add_argument("pile")
+    sl.add_argument("--ts", help="override the seal moment (testing)")
+    sl.set_defaults(func=cmd_seal)
+
+    us = sub.add_parser("unseal",
+                        help="withdraw a seal — the block becomes ordinary and correctable "
+                             "again. Nothing is marked: a seal is a claim you are currently "
+                             "making, not an event, and changing your mind owes nothing")
+    us.add_argument("id", help="block id, e.g. 50c1 or #50c1")
+    us.add_argument("pile")
+    us.set_defaults(func=cmd_unseal)
 
     d = sub.add_parser("doctor", help="disclose the frozen artifact SHA + runtime deps")
     d.set_defaults(func=cmd_doctor)
