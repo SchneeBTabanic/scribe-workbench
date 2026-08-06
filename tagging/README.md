@@ -59,13 +59,53 @@ the pointer keys, and the key entries themselves.
 
 ## Where this came from, honestly
 
-The vocabulary was developed in a sibling research project by reading systems that have kept
-large tagged corpora honest for decades — Debian's lintian tag registry (the `Show-Always`
-tier, the classification-that-is-not-a-fault, `Name-Spaced`), Knuth's WEB (a repeated
-`@key:value` is a named section, so **a view is a tangle**), and work on verb-framing in
-language. The reference document carries those citations per key.
+Two layers, and the order matters — because the earlier version of this section named only the
+second, which quietly made the whole thing look reasoned down from other people's systems.
 
-Those cited source files live in the sovereign's research repositories and are **not in this
+**The impulse is the keeper's own, and it came from a lived problem.** Working at length with a
+language model, he noticed how easily the work was pulled up into abstract thought — fluent,
+agreeable, and going nowhere anybody could act on. The response was to insist that a record be
+grounded in **doing**. What was born there was called **Affordances** — real levers a human can
+actually take, rather than a smooth surface to receive — and it is where the `@act:` idea began,
+long before it had a syntax.
+
+**Then it was lost, and had to be found again — three times.** This is not incidental; it is
+the shape of the thing. It came back through **Talmy's** verb-framed / satellite-framed
+distinction, which gave the *reaching* half its name. It was reinforced from an unexpected
+direction: **filing systems from before computers**, where organisations filed paper by
+**function** — what a document *does* — and where the arrival of computing flattened that into
+nominal categories and the functional axis was simply lost for a while. From there it went
+through **FrameNet** and into a sibling agent project, and finally here.
+
+**One strand is still running, and it is the reason this discipline is not only for humans.**
+A pile is a mixture: some of it an AI wrote. So the question arose whether a language model
+could resist its *own* pull toward nominalisation well enough to write `@act:` and `@path:`
+values for its own memory piles that were genuine doings — rather than, in the keeper's phrase,
+**a verb garment worn over a noun**. A gauntlet was built to find out: a stack that puts a
+proposed tag through a language with strong verb-and-path formative force — **Japanese** —
+before it is accepted. That is a separate research project, still open, and not in this repo.
+It is worth knowing it exists, because it is the honest measure of how hard the rule below is:
+the machine that generates tags fastest is the one that needs the most help obeying it.
+
+**The enemy is the same one every time, wearing three costumes:** a conversation that drifts
+into abstraction, a filing system that turns *what this does* into *what drawer it lives in*,
+and a tag that is a noun in a drawer. All three are the same move — **nominalisation** — and
+resisting it is not a stylistic preference. It is the whole reason `@act:` and `@path:` are
+shaped the way they are.
+
+That tension does not go away, and this vocabulary does not resolve it. A machine cannot search,
+relate, or find anything again without discrete named units; a living thought does not arrive in
+units. **The discipline here is an attempt to stand between the two** — to nominalise as little
+as will still let you find the thing.
+
+**The second layer is where it was tested and sharpened.** The mechanics — and most of the keys
+beyond the first two — were worked out by reading systems that have kept large tagged corpora
+honest for decades: **Debian's lintian tag registry** (the `Show-Always` tier, the
+classification-that-is-not-a-fault, `Name-Spaced`), **Knuth's WEB** (a repeated `@key:value` is
+a named section, so **a view is a tangle**), and work on verb-framing in language. The reference
+document carries those citations per key. They did not supply the impulse; they kept it honest.
+
+Those cited source files live in the keeper's research repositories and are **not in this
 repo**, so a citation there is a record of what was read rather than a link you can follow.
 
 ## A companion checker exists, and is not in this repo
