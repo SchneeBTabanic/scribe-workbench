@@ -46,14 +46,27 @@ use: you compose and edit there; Scribe holds the pile and hands you clean views
 The one habit worth learning first:
 
 ```sh
-scribe view topic:nas pile.txt > nas.view 2>/dev/null   # a clean file, open it anywhere
-# …edit bodies in your own editor…
-scribe push nas.view pile.txt                           # your edits land home, by #id
+scribe view topic:nas pile.txt | xed -    # opens as an unsaved tab; no file left behind
+# …edit bodies in your own editor, save to a file only if you want one…
+scribe push nas.view pile.txt             # your edits land home, by #id
 ```
+
+**Do not add `2>/dev/null`.** This README taught that until 2026-08-11 and it was advice
+that had gone stale: the view now carries its own count, its order, and — if the pile did
+not fully parse — a warning that **the count you are reading is SHORT**. Those lines travel
+*inside* the view, so they survive the pipe into your editor. Everything on standard error is
+additional, and silencing it costs you nothing except the extra telling. What it used to cost
+you was the only notice that a block had been swallowed.
+
+If you prefer a file to a pipe, `scribe view topic:nas pile.txt > nas.view` still works and
+the same disclosures are in it.
 
 For the worked daily walkthrough — where to keep the pile so terminal paths stay short,
 capturing from an editor tab, deriving a view into a new tab and pushing it back — see
-**[`GUIDE-scribe-with-xed.md`](GUIDE-scribe-with-xed.md)**.
+**[`guide_proposed-workflow.md`](guide_proposed-workflow.md)**. It shows real prompts and
+real output rather than describing them, and it is **a working proposal, still being
+written** — the front of it is the practical path; further in it still carries open design
+questions that are not settled user documentation.
 
 ## What a pile is
 
@@ -102,6 +115,45 @@ Four things worth knowing, and then you can stop thinking about identity:
 Two blocks reading `agreed` are two *sayings*, not one saying stored twice. So identity is
 not computed from what a block says — content alone cannot separate two identical utterances,
 and pretending otherwise is what makes a records tool quietly lose one of them.
+
+### Pointing at a block in another pile — two forms, and only one survives a rename
+
+```
+@ref:other-pile.txt#2716          the NAME     — readable, and breaks when you rename
+@ref:genesis:1c1b8609#2716        the IDENTITY — opaque, and survives it
+```
+
+Inside one pile, `#2716` is enough: the pile is the namespace, as a directory is for a
+filename. **Across piles, `PILE#id` makes the filename do identity's job** — and a filename
+is meant to be changed. Rename the file and every pointer that named it is dead, silently,
+because a reference to a file that is not there simply finds nothing.
+
+That is not hypothetical. One `git mv` in this repo on 2026-08-10 broke six references, a
+whitelist entry, and a test guard — and the guard broke *quietly*, so the suite went on
+passing while the document it checked went unchecked for a day.
+
+So a pile's `@genesis:` — minted once at birth, written into its own stamp, never
+recomputed — can be used as the address instead. **Both forms work and neither is
+deprecated**: `PILE#id` is what you read and type, `genesis:…#id` is what you write when the
+pointer must outlive the filename. Name and identity, kept separate, one level up from
+blocks.
+
+**Abbreviate it like a git hash.** Any prefix of 4 hex or more is accepted and **checked**
+against the piles you name — if it matches two, scribe says which two and asks for a longer
+one; it never picks. The check happens every time rather than once, because the set of piles
+a prefix must be unique among is only known when you name them.
+
+```sh
+scribe backlinks 'genesis:1c1b8609#2716' pile-a.txt pile-b.txt
+#   b.txt#2290 (2026-08-11T…) via @ref:genesis:1c1b8609#2716   (= pile-a.txt)
+```
+
+The report shows the pointer **exactly as written**, then names the pile it resolved to —
+so you can search the file for what you were shown, and still know where it went.
+
+A pile born before 2026-08-01 has no genesis and cannot grow one backwards: `scribe stamp`
+issues it from the moment of stamping, which is a different fact and is said rather than
+smoothed over.
 
 ## The four acts — and choosing between them is yours
 
@@ -379,6 +431,12 @@ scribe blocks PILE                every block with its whole tag run
 scribe export key:value PILE [--bare] [--joiner S]
     Clean export to paste into the next mind. --joiner makes the concatenation itself
     code-safe when bodies are meant to tangle into one runnable file.
+    If the pile has a header that does not parse, the export would be SHORT — so the
+    warning rides along in the trailing manifest, and with --bare (which omits that
+    manifest) the export is REFUSED outright rather than handed to you silently.
+    Every other short artifact stays in reach: re-run the toc, regenerate the view,
+    repair the pile. An export LEAVES. Once it is pasted somewhere else, nothing
+    downstream can discover it was incomplete.
 
 scribe push VIEW PILE [--seal]    land a view's edits home by #id — appends a superseding
                                   block; never overwrites. The new block is not sealed
@@ -407,7 +465,8 @@ scribe verify PILE [PILE...]      is each SEALED block still the one its seal wa
                                   NOT check
 scribe backlinks TARGET PILE [PILE...]
     Every block whose tag VALUE names TARGET — the reverse of @ref:/@overrules:/etc.
-    TARGET is '#id' or 'pile.txt#id'. Computed fresh, never written back.
+    TARGET is '#id', 'pile.txt#id', or 'genesis:<hex>#id'. Computed fresh, never
+    written back, and the report shows each pointer exactly as it is written.
 scribe duplicates PILE [PILE...]  every id used by more than one block, with its tags.
                                   Read-only: declares, never repairs.
 scribe activate CONDITION PILE [PILE...] [--key awaits]
@@ -453,7 +512,9 @@ this project refuses.
 
 ## Documents in this repo
 
-- `GUIDE-scribe-with-xed.md` — practical guide to using Scribe beside a plain editor.
+- `guide_proposed-workflow.md` — the practical walkthrough: Scribe beside a plain editor,
+  shown as real prompts and real output. **A working proposal, not finished documentation** —
+  the opening is the usable path; later sections still hold unresolved design questions.
 - `tagging/README.md` — which of the two tag documents to open, and when.
 - `tagging/TAGS-bench-sheet.md` — the DOING sheet; keep it open while you tag.
 - `tagging/TAG-KEYS-reference-v1-DRAFT.md` — the WHY behind each key, for a rainy day.

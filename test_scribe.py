@@ -1342,6 +1342,107 @@ class TestVerifyAnnouncesMalformedHeaders(unittest.TestCase):
         self.assertEqual(rc, 0)
 
 
+class TestAReferenceThatSurvivesARename(unittest.TestCase):
+    """`PILE#id` makes the FILENAME do identity's job for anything outside one pile, which
+    §3.16 forbids at block scale and this had at document scale. Demonstrated on 2026-08-10:
+    one `git mv` in this repo broke six references, a whitelist entry and a doc guard —
+    and the doc guard broke SILENTLY.
+
+    So: `genesis:<hex>#<id>` alongside `PILE#id`. The filename is the NAME, the genesis is
+    the IDENTITY, both may be written, and only one survives a rename. Built 2026-08-11 on
+    Schnee's ruling."""
+
+    def _pile(self, name, body="first saying.\n"):
+        path = os.path.join(self.dir, name)
+        old = sys.stdin
+        try:
+            sys.stdin = io.StringIO(body)
+            import contextlib
+            with contextlib.redirect_stderr(io.StringIO()), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                scribe.main(["capture", "--append", path, "--source", "self",
+                             "--tag", "topic:nas"])
+        finally:
+            sys.stdin = old
+        text = pathlib.Path(path).read_text(encoding="utf-8")
+        blocks = [b for b in scribe.parse_pile(text) if b.id]
+        return path, blocks[0].id, scribe.genesis_of(text, path)[0]
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="genesis-ref-")
+
+    def _backlinks(self, target, *piles):
+        import contextlib
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = scribe.cmd_backlinks(_Args(target=target, pile=list(piles)))
+        return rc, out.getvalue(), err.getvalue()
+
+    def test_a_genesis_reference_outlives_the_filename(self):
+        """The whole point, and the only test that matters if the others go."""
+        a, aid, agen = self._pile("a.txt")
+        b, bid, _ = self._pile("b.txt", "points at the other pile.\n")
+        import contextlib
+        with contextlib.redirect_stderr(io.StringIO()):
+            scribe.cmd_tag(_Args(id=bid, pile=b, topic=None, state=None, source=None,
+                                 remove=None, tag_form="repeated",
+                                 tag=[f"ref:genesis:{agen[:8]}#{aid}",
+                                      f"overrules:a.txt#{aid}"]))
+        rc, out, _ = self._backlinks(f"#{aid}", a, b)
+        self.assertIn("(2)", out, "both pointers resolve before the rename")
+
+        renamed = os.path.join(self.dir, "the-nas-pile.txt")
+        os.rename(a, renamed)
+        rc, out, _ = self._backlinks(f"#{aid}", renamed, b)
+        self.assertIn(f"genesis:{agen[:8]}#{aid}", out, "the genesis pointer survives")
+        self.assertNotIn("overrules", out, "the filename pointer does not, and silently")
+
+    def test_the_report_shows_the_value_AS_WRITTEN(self):
+        """It used to rebuild one from the resolved path — showing `@ref:a.txt#2716` for a
+        value that said no such thing. Harmless-looking until a reference could be written
+        by genesis, at which point a reader could not grep for what they were shown."""
+        a, aid, agen = self._pile("a.txt")
+        b, bid, _ = self._pile("b.txt", "pointer.\n")
+        import contextlib
+        with contextlib.redirect_stderr(io.StringIO()):
+            scribe.cmd_tag(_Args(id=bid, pile=b, topic=None, state=None, source=None,
+                                 remove=None, tag_form="repeated",
+                                 tag=[f"ref:genesis:{agen[:8]}#{aid}"]))
+        _, out, _ = self._backlinks(f"#{aid}", a, b)
+        self.assertIn(f"@ref:genesis:{agen[:8]}#{aid}", out)
+        self.assertIn("(= a.txt)", out, "and it names the pile the value does NOT say")
+
+    def test_an_ambiguous_prefix_is_refused_with_both_candidates(self):
+        """Row 29 and `duplicates`' rule: which pile was meant is the keeper's to say."""
+        g = {"/x/one.txt": "abcd1111" + "0" * 56, "/x/two.txt": "abcd2222" + "0" * 56}
+        self.assertEqual(scribe.resolve_by_genesis("abcd1", g), "/x/one.txt")
+        self.assertIsNone(scribe.resolve_by_genesis("ffff", g))
+        with self.assertRaises(scribe.AmbiguousGenesis) as caught:
+            scribe.resolve_by_genesis("abcd", g)
+        for name in ("one.txt", "two.txt"):
+            self.assertIn(name, str(caught.exception))
+
+    def test_a_malformed_genesis_ref_is_not_mistaken_for_a_filename(self):
+        """`genesis:1` fell through to filename matching and answered "not among the
+        pile(s) given" — an answer about the wrong question, and the kind that sends
+        someone hunting for a missing file. Writing `genesis:` states the intent."""
+        a, aid, _ = self._pile("a.txt")
+        rc, _, err = self._backlinks("genesis:1#" + aid, a)
+        self.assertEqual(rc, 1)
+        self.assertIn("not a usable genesis reference", err)
+        self.assertNotIn("not among the pile", err)
+
+    def test_a_legacy_pile_with_no_genesis_is_told_so_plainly(self):
+        """A pile born before 2026-08-01 has no genesis and cannot grow one retroactively —
+        `stamp` issues it from the moment of stamping, which is a different fact."""
+        legacy = os.path.join(self.dir, "legacy.txt")
+        pathlib.Path(legacy).write_text(
+            "@@ #a001 2026-03-01T09:00:00 @topic:nas @source:s\nold.\n", encoding="utf-8")
+        rc, _, err = self._backlinks("genesis:deadbeef#a001", legacy)
+        self.assertEqual(rc, 1)
+        self.assertIn("born before", err)
+
+
 class TestWordsAboveTheFirstBlockAreYours(unittest.TestCase):
     """2026-08-11. The rule was described everywhere — in this file, in the guides — as
     'push strips the leading `#` comment lines'. IT NEVER DID THAT. `push_view` keeps only
@@ -1544,19 +1645,50 @@ class TestEveryDerivedVerbCanSayItsFiguresAreWrong(unittest.TestCase):
             self.assertNotIn("did not parse", out)
 
 
-class TestTheStampNamesTheHazard(unittest.TestCase):
-    """The stamp described the format and named no hazard — while the one edit that costs
-    you something is a header typo, and hand-editing is exactly what the stamp invites."""
+class TestTheStampStaysShortAndTheHazardStaysDocumented(unittest.TestCase):
+    """Was `TestTheStampNamesTheHazard`. The stamp DID name the hazard, from 2026-08-08
+    until 2026-08-11, when Schnee cut it from 4,033 characters to ~500 — because
+    fifty-seven lines of machine preamble sat above his own first word, in his own file.
 
-    def test_the_stamp_warns_about_hand_edited_headers(self):
-        self.assertIn("SPACE INSIDE A TAG VALUE", scribe.PILE_STAMP)
-        self.assertIn("absorbed into the PREVIOUS", scribe.PILE_STAMP)
+    The findings that put those paragraphs there are not withdrawn. What changed is WHERE
+    they live: the README and the guide carry them, and the stamp carries the one line he
+    kept unprompted — that grep returns fragments. So these tests follow the information
+    to its new home rather than being deleted, because deleting them would erase the
+    reasons along with the assertions."""
 
-    def test_the_stamp_and_the_detector_agree_about_the_sigil(self):
-        """They disagreed until 2026-08-08: the stamp said a block begins at `@@ ` and the
-        detector required `@@ #`. A reader following the stamp would write a header the
-        parser drops."""
-        self.assertIn("`@@ #` in column 0", scribe.PILE_STAMP)
+    def test_the_stamp_stays_short(self):
+        """The ruling itself, made checkable. A stamp creeps: every future finding will
+        look like one more line that surely belongs at the top of every pile, and that is
+        exactly how it reached 4,033 characters. The number is arbitrary; the direction
+        is not."""
+        n = len(scribe.PILE_STAMP)
+        self.assertLess(n, 1200,
+                        f"the stamp is {n} chars. It was cut to ~500 on 2026-08-11 because "
+                        f"it buried the keeper's own text. If a new line truly belongs at "
+                        f"the top of every pile, that is a ruling to ask for — not a "
+                        f"threshold to raise.")
+
+    def test_the_hazard_is_still_documented_somewhere_a_reader_is_sent(self):
+        """It left the stamp; it must not have left the repo. A space inside a tag value
+        silently swallows a block, and it is the one fault with no symptom — the person
+        who does not know it is exactly the person who will not think to run
+        `scribe blocks`."""
+        here = pathlib.Path(__file__).parent
+        docs = "\n".join((here / d).read_text(encoding="utf-8")
+                         for d in ("README.md", "guide_proposed-workflow.md")
+                         if (here / d).exists())
+        self.assertIn("SPACE INSIDE A TAG VALUE", docs.upper())
+        self.assertIn("absorbed into the previous", docs.lower())
+
+    def test_the_stamp_and_the_detector_still_do_not_disagree(self):
+        """They disagreed until 2026-08-08: the stamp said a block begins at `@@ ` while
+        the detector required `@@ #`, so a reader following the stamp would write a header
+        the parser drops. The stamp no longer describes the format at all, which settles
+        it — but it must never describe it WRONGLY, so the guard becomes a negative one."""
+        s = scribe.PILE_STAMP
+        self.assertNotIn("`@@ ` in column 0", s,
+                         "the stamp described the boundary without the # sigil — the exact "
+                         "disagreement fixed on 2026-08-08")
 
     def test_the_stamp_is_still_not_itself_malformed(self):
         self.assertEqual(scribe.scan_malformed_headers(scribe.PILE_STAMP), [])
@@ -1648,7 +1780,10 @@ class TestPileStamp(unittest.TestCase):
             text = fh.read()
         self.assertTrue(scribe.is_stamped(text))
         self.assertIn("scribe view", text)
-        self.assertIn("FRAGMENTS", text)          # names what grep cannot give back
+        # "FRAGMENTS" (uppercase) until 2026-08-11, when the stamp was cut from 4,033
+        # characters to ~500 on Schnee's ruling. The grep warning SURVIVED the cut — it
+        # was the one line he kept unprompted — in lower case.
+        self.assertIn("fragments", text.lower())  # names what grep cannot give back
         sys.stdin = io.StringIO("second body\n")
         self._capture(p, "backup")
         with open(p) as fh:
@@ -1700,15 +1835,31 @@ class TestPileStamp(unittest.TestCase):
         """A pile is a MIXTURE — the human's writing, material handed in, and blocks an
         AI wrote. Provenance is per block (@source:/@origin:/@attests:), so one sentence
         at the top cannot be true of all of it, and a reader who trusts it inherits a
-        false attribution for every block it does not fit. The stamp points at where
-        provenance lives and says that an absent tag means UNKNOWN (§3.8). This test
-        exists because a first draft did claim it."""
+        false attribution for every block it does not fit. This test exists because a
+        first draft did claim it.
+
+        
+        SHORTENED 2026-08-11 BY SCHNEE'S RULING, and this test kept its REASON while
+        losing most of its assertions. The stamp was cut from 4,033 characters to ~500
+        because it buried the keeper's own text under fifty-seven lines of machine
+        preamble in his own file. The provenance paragraph went with it. I argued to keep
+        it — the argument is in the conversation, it was heard, and he ruled: "cost and
+        consequences all greedily mine."
+
+        WHAT SURVIVES HERE IS THE NEGATIVE GUARD, which is the load-bearing half. The
+        stamp no longer TEACHES where provenance lives; it must still never CLAIM a
+        file-level author. Teaching is a convenience the README can carry. A false
+        file-level attribution is a harm the stamp itself would do, and no ruling about
+        length touches that."""
         s = scribe.PILE_STAMP
         self.assertNotIn("this file's author", s)
-        self.assertIn("PER BLOCK", s)
-        for key in ("@source:", "@origin:", "@attests:"):
-            self.assertIn(key, s)
-        self.assertIn("unknown", s.lower())      # absence is named, not implied
+        self.assertNotIn("author of this file", s)
+        for claim in ("written by", "authored by", "by the keeper"):
+            self.assertNotIn(claim, s.lower()), f"stamp makes a file-level claim: {claim}"
+        # and the teaching it used to do must exist SOMEWHERE a reader is sent
+        readme = (pathlib.Path(__file__).parent / "README.md").read_text(encoding="utf-8")
+        self.assertIn("@source:", readme,
+                      "the stamp stopped teaching provenance; the README must not have")
 
     def test_stamping_an_existing_pile_is_idempotent_and_keeps_a_human_preamble(self):
         p = self._pile()
@@ -3023,17 +3174,38 @@ class TestTheDOCUMENTSAreExecutable(unittest.TestCase):
     prompted it would have been caught here only via its quoted output, not via its prose. It
     is a floor, not a proof."""
 
+    # `GUIDE-scribe-with-xed.md` was renamed `guide_proposed-workflow.md` on 2026-08-10 and
+    # this list still named the old file until 2026-08-11 — so the guide was SILENTLY NO
+    # LONGER CHECKED. The suite stayed green: a doc that does not exist has no claims to
+    # verify, so it passes by being absent. Third instance of filename-as-identity from the
+    # same rename (the placeholder whitelist and the two README links were the others), and
+    # the quietest, because the other two produced a visible failure or a broken link.
+    #
+    # Hence the guard below: a name in this list that is not on disk is a FAILURE, not a
+    # skip. A checker that silently checks nothing is the §3.8 shape this file exists to
+    # refuse, and it had it.
     DOCS = ["README.md", "tagging/README.md", "tagging/TAGS-bench-sheet.md",
-            "tagging/TAG-KEYS-reference-v1-DRAFT.md", "GUIDE-scribe-with-xed.md"]
+            "tagging/TAG-KEYS-reference-v1-DRAFT.md", "guide_proposed-workflow.md"]
 
     @classmethod
     def setUpClass(cls):
         here = pathlib.Path(__file__).parent
         cls.text = {}
+        missing = []
         for d in cls.DOCS:
             p = here / d
             if p.exists():
                 cls.text[d] = p.read_text(encoding="utf-8")
+            else:
+                missing.append(d)
+        # `if p.exists()` ALONE was how the guide fell out of this check in silence when it
+        # was renamed: absent means no claims, no claims means nothing to fail, and the suite
+        # reported health. A named document that is not on disk is now a failure — it means
+        # either the list is stale or a document has gone, and both are things to be told.
+        #
+        # NOT a hard raise in setUpClass, which would take the whole class down and hide the
+        # checks that CAN still run. It records, and the test below reports.
+        cls.missing_docs = missing
         cls.parser = scribe.build_parser()
         cls.verbs = dict(cls.parser._subparsers._group_actions[0].choices)
 
@@ -3044,6 +3216,23 @@ class TestTheDOCUMENTSAreExecutable(unittest.TestCase):
         for blk in re.findall(r"```[a-z]*\n(.*?)```", body, re.S):
             spans += blk.splitlines()
         return spans
+
+    def test_every_document_this_guard_NAMES_is_actually_there(self):
+        """A checker that silently checks nothing is worse than no checker, because a green
+        suite then reads as coverage it does not have.
+
+        `guide_proposed-workflow.md` was `GUIDE-scribe-with-xed.md` until 2026-08-10. This
+        class went on naming the old file, found it absent, skipped it without a word, and
+        passed — so the repo's most practical document went unchecked for a day while the
+        suite reported health. Nothing failed, because absence has no claims to verify.
+
+        The same rename broke a whitelist and two README links. Those announced themselves:
+        one failed a test, the others were visibly dead links. THIS one was the quiet
+        instance, and quiet is the one that lasts."""
+        self.assertEqual(self.missing_docs, [],
+                         "named by this guard and not on disk — either the list is stale "
+                         "or a document has gone; both need saying:\n  "
+                         + "\n  ".join(self.missing_docs))
 
     def test_every_verb_the_documents_name_is_a_real_verb(self):
         missing = []

@@ -143,7 +143,8 @@ MISTYPED_HEADER_RE = re.compile(r"^@@ +(?![-+])\S.* @[^\s:]+:[^\s]+")
 # point at the record; and where there is no record, say so.
 # ---------------------------------------------------------------------------
 
-STAMP_MARK = "# This file is a scribe pile"
+STAMP_MARK = "# Welcome to an innoculated Project-Namirha file"
+
 
 # EVERY LINE SCRIBE WRITES INTO A DERIVED VIEW'S HEADER CARRIES THIS. Added 2026-08-11.
 #
@@ -165,63 +166,13 @@ STAMP_MARK = "# This file is a scribe pile"
 # self-identifying markers, and one vocabulary for "scribe wrote this" beats two.
 VIEW_MARK = "# scribe:"
 
-PILE_STAMP = f"""{STAMP_MARK} — one canonical file, appended in arrival order.
-# Read it plainly: a block begins at a line starting `@@ #` in column 0, carrying
-# `#<id> <timestamp> @key:value ...`, and runs until the next such line or the end
-# of the file. No tool is needed to read this file. A tool is needed to SEARCH it well.
-#
-# EDITING THIS FILE BY HAND IS EXPECTED AND ALLOWED — it is a plain text file and that is
-# the point. But a header line is the one place where a typo is not cosmetic. A header
-# that does not parse is not reported as a broken header: it is absorbed into the PREVIOUS
-# block's body, silently, and the two blocks become one. The commonest cause by far is a
-# SPACE INSIDE A TAG VALUE — write `@source:claude-code`, never `@source:claude code` —
-# followed by a missing or mistyped `#`. Both keep looking correct to the eye.
-#
-# What that costs you is derived views, not this file. Every `scribe view`, `toc`, `keys`
-# and `export` reads the pile through the same parser, so a swallowed block is missing
-# from all of them at once while each still looks complete. Scribe announces the damage
-# on read and prints it into the view's own header, and REFUSES to write the file back
-# until it is repaired. If a count ever looks short, or two blocks appear to have run
-# together, suspect a header line before you suspect the tool.
-#
-# TO SEARCH IT WELL (human or AI assistant):
-#   scribe keys   PILE                  the tag keys and values this pile carries
-#   scribe toc    PILE [--by KEY]       contents, grouped by any key you name
-#   scribe view   key:value PILE        every block carrying that tag, whole
-#   scribe blocks PILE                  every block with its whole tag run
-# Views compose — `scribe view a:b PILE | scribe view c:d -` is an AND-query.
-#
-# WHY NOT JUST grep: a grep over this file returns FRAGMENTS. Match inside a body and
-# you get a line with no id, no timestamp and no tags; match a header and you get the
-# provenance with none of the claim. It never hands back a whole record. If you must
-# grep, read back up to the nearest `@@ ` line before quoting anything from here.
-#
-# PROVENANCE IS PER BLOCK, NEVER PER FILE. A pile is a mixture by construction: the
-# human's own writing, material handed in from elsewhere, and blocks an AI wrote. Do
-# not attribute anything here to "the author of this file" — there is no such person.
-# Read it off the block's own tags, and say when they are absent rather than guessing:
-#   @source:  which mind said it        @origin:  human or ai — which kind made it
-#   @attests: who vouches for it, which is NOT always who wrote it
-# Untagged means unknown, not mine and not anyone's.
-#
-# THE `#id` AT THE FRONT OF EACH HEADER is that block's identity — issued once when it was
-# captured, checked unique in THIS pile, and never recomputed. It is the digits of the
-# timestamp beside it, taken from the right, so you can check by eye that a header has not
-# been fabricated. It says nothing about what the block contains, on purpose: correcting a
-# word does not make a block a different block. Across piles, write `PILE#id` — the pile is
-# the namespace, as a directory is for a filename. Do not edit it by hand.
-#
-# @name: IS A NAME YOU CAN SAY AGAIN. Capture the same @name: later and the name simply
-# follows you to the new block; the earlier ones are untouched, unmarked, and still resolve
-# by their #id. `scribe recall NAME` finds the live one, `scribe names` lists them all.
-# Nothing is superseded and nothing is owed — this is Forth's dictionary, where redefining a
-# word announces itself and leaves the old definition standing.
-#
-# A LONG HEX `@sealed:` AT THE END OF A HEADER, where one appears, is opt-in: someone asked
-# for that body to be frozen as it stands, and `scribe verify` will say if it changed. Most
-# blocks do not carry one and are meant to be correctable. `@mint:` on an older block is a
-# RETIRED identity scheme (2026-08-01..04); it is kept readable and is no longer checked.
-# (scribe {VERSION})
+PILE_STAMP = f"""{STAMP_MARK} - curated by scribe-workbench.
+# To ai agents: Use `scribe view key:value FILE` as 'grep' returns fragments here.
+# This message was added by either:
+# a) 'scribe stamp FILE' - which gives your file a birth certificate (@genesis: below).
+# b) 'scribe capture --append FILE' - which in addition also declares your first block
+#    for entering and tagging text; appended where this message ends.
+# Licensed under the GNU Affero General Public License v3 (AGPL-3.0).
 """
 
 
@@ -235,12 +186,12 @@ def stamp_for(genesis):
     database, no registry. Row 29 refuses registries; this is the alternative it names:
     let the namespace discriminate, and keep the namespace in the artifact."""
     return PILE_STAMP + (
-        "#\n"
-        "# THIS PILE'S BIRTH MOMENT. Written once, at birth, in-band — no sidecar, no\n"
-        "# database, no registry. Since 2026-08-05 nothing depends on it: a block's\n"
-        "# identity is issued from its own declaring moment and checked within this pile,\n"
-        "# so the pile itself is the namespace. Kept because a record of when a pile began\n"
-        "# is worth having on its own account. Do not edit it; losing it breaks nothing.\n"
+        # ONE LINE, not six. The six-line explanation of what a genesis is and why
+        # nothing depends on it went with the stamp cut of 2026-08-11: the keeper's
+        # own words above already call it a birth certificate, and the rest was
+        # reference material sitting above his first sentence in his own file.
+        "# The line below is this pile's birth moment, written once at birth.\n"
+        "# Do not edit it; losing it breaks nothing.\n"
         f"# @genesis:{genesis}\n")
 
 
@@ -1379,13 +1330,83 @@ def redefinitions(blocks):
 # carrying the tag) and that id is real in the target pile. Read-only —
 # nothing here is ever written back into a pile.
 
+GENESIS_REF_RE = re.compile(r"^genesis:(?P<hex>[0-9a-f]{4,64})$")
+
+
+class AmbiguousGenesis(Exception):
+    """A genesis prefix that names more than one of the piles in hand."""
+
+
+def resolve_by_genesis(prefix, genesis_by_pile):
+    """Which pile is `prefix` the genesis of? Returns a path, or None if none matches.
+
+    THE POINT OF THIS, and why the filename is not enough. A cross-pile reference has been
+    `PILE#id` since the mint was retired — the pile is the namespace, exactly as a directory
+    is for a filename. That is readable and it breaks on rename: `git mv` on 2026-08-10 broke
+    six references and a doc guard in this repo alone, which is the same failure at document
+    scale that §3.16 forbids at block scale. **The filename is the NAME. The genesis is the
+    IDENTITY.** Both may be written; only one survives being renamed.
+
+    THE ABBREVIATION RULE IS KNUTH'S, the same one `gen_handle` already uses: shorten only
+    as far as the text still identifies uniquely, and then PERFORM THE CHECK. So any prefix
+    of 4 hex or more is accepted and checked against the piles actually in hand — length is
+    an outcome of checking, never a bet on collision odds.
+
+    AND THE CHECK CANNOT HAPPEN AT BIRTH, which is the one asymmetry against the handle. A
+    handle is checked once, within its pile, and stays unique because that pile is a closed
+    set. The set a genesis prefix must be unique among is **whichever piles are named
+    together**, and that is only knowable at resolution. Two piles that never meet may share
+    a prefix harmlessly and collide the day one command names both — so the check is done
+    here, every time, rather than once and trusted.
+
+    AMBIGUITY IS DECLARED, NEVER GUESSED (row 29, and `duplicates`' own rule): which pile was
+    meant is the keeper's to say, so this raises with both candidates rather than choosing
+    the first."""
+    hits = [path for path, g in genesis_by_pile.items()
+            if g and g.startswith(prefix)]
+    if len(hits) > 1:
+        raise AmbiguousGenesis(
+            f"genesis:{prefix} names {len(hits)} of the piles given: "
+            + ", ".join(sorted(os.path.basename(h) for h in hits))
+            + " — lengthen the prefix until it names one")
+    return hits[0] if hits else None
+
+
 def compute_backlinks(piles):
     """`piles` is {path: [Block, ...]} (already parsed). Returns
-    {(pile_path, target_id): [(from_pile, key, from_id, from_ts), ...]}."""
+    {(pile_path, target_id): [(from_pile, key, from_id, from_ts, value_as_written), ...]}.
+
+    `value_as_written` carries the tag value VERBATIM. It used to be dropped and the
+    report rebuilt one from the resolved path — which was already a small lie (it showed
+    `@ref:a.txt#2716` for a value that said no such thing) and became a real one once a
+    reference could be written by genesis: a reader could not grep for what they were
+    shown. §3.8 — a derived report must not silently normalise the thing it reports."""
     ids_by_pile = {p: {b.id for b in blocks if b.id}
                   for p, blocks in piles.items()}
 
+    # Each pile's own genesis, read out of its own stamp — no registry, no index. The
+    # artifact carries its identity in-band, so resolution is derived from the files handed
+    # in rather than from anything stored beside them.
+    genesis_by_pile = {}
+    for p in piles:
+        try:
+            with open(p, "r", encoding="utf-8") as fh:
+                genesis_by_pile[p] = genesis_of(fh.read(), p)[0]
+        except OSError:
+            genesis_by_pile[p] = None
+
     def _resolve_pile(from_pile, named):
+        m = GENESIS_REF_RE.match(named)
+        if m:
+            # A rename cannot break this one. Ambiguity is swallowed HERE rather than
+            # raised: compute_backlinks is a derivation over a whole corpus and one
+            # ambiguous pointer must not abort the report for every other block. The
+            # pointer simply does not resolve, and so is not counted — the CLI path
+            # below raises, because there the human named that one target on purpose.
+            try:
+                return resolve_by_genesis(m.group("hex"), genesis_by_pile)
+            except AmbiguousGenesis:
+                return None
         if named in ids_by_pile:
             return named
         candidate = os.path.normpath(
@@ -1405,7 +1426,7 @@ def compute_backlinks(piles):
                 if target_pile and tail in ids_by_pile.get(target_pile, ()):
                     if tail != b.id or target_pile != p:
                         back.setdefault((target_pile, tail), []).append(
-                            (p, key, b.id, b.ts))
+                            (p, key, b.id, b.ts, val))
     return back
 
 
@@ -1417,11 +1438,17 @@ def render_backlinks(target_pile, target_id, back, same_pile_label=None):
     if not hits:
         return f"(nothing points at {label})\n"
     lines = [f"What points at {label} ({len(hits)}):"]
-    for from_pile, key, from_id, ts in hits:
+    for from_pile, key, from_id, ts, value_written in hits:
         same = from_pile == target_pile
         origin = f"#{from_id}" if same else f"{os.path.basename(from_pile)}#{from_id}"
-        value_shown = f"#{target_id}" if same else f"{os.path.basename(target_pile)}#{target_id}"
-        lines.append(f"  {origin} ({ts}) via @{key}:{value_shown}")
+        # VERBATIM, so a reader can find this pointer by searching for what they were
+        # shown. Where it was written by genesis, the pile it resolved to is added —
+        # that is the part the value does NOT say and the reader would otherwise have
+        # to work out.
+        shown = f"@{key}:{value_written}"
+        if value_written.startswith("genesis:") and not same:
+            shown += f"   (= {os.path.basename(target_pile)})"
+        lines.append(f"  {origin} ({ts}) via {shown}")
     return "\n".join(lines) + "\n"
 
 
@@ -2440,6 +2467,40 @@ def cmd_backlinks(args):
     pile_paths = list(piles)
     if not target_pile_name:
         target_pile, same_pile_label = pile_paths[0], None
+    elif target_pile_name.startswith("genesis:") and not GENESIS_REF_RE.match(target_pile_name):
+        # Writing `genesis:` states the INTENT plainly, so a malformed one must be named as
+        # malformed. Falling through to filename matching (which it did until this was
+        # tested) produced "not among the pile(s) given" — an answer about the wrong
+        # question, and the kind that sends someone looking for a missing file.
+        sys.stderr.write(
+            f"REFUSED: {target_pile_name!r} is not a usable genesis reference. Write "
+            f"`genesis:<hex>#<id>` with at least 4 hex digits — fewer cannot pick out a "
+            f"pile, and the prefix is checked against the piles you name, not guessed.\n")
+        return 1
+    elif GENESIS_REF_RE.match(target_pile_name):
+        # `genesis:<hex>#<id>` — the form that survives a rename. Any prefix of 4 hex or
+        # more, checked against the piles in hand (Knuth's rule, as `gen_handle` uses it).
+        # Ambiguity RAISES here, unlike in the corpus-wide derivation: the human named one
+        # target deliberately, so guessing which pile they meant would be the tool deciding
+        # (§3.3). It says which piles answered and asks for a longer prefix.
+        gen_prefix = GENESIS_REF_RE.match(target_pile_name).group("hex")
+        genesis_by_pile = {}
+        for p in pile_paths:
+            with open(p, "r", encoding="utf-8") as fh:
+                genesis_by_pile[p] = genesis_of(fh.read(), p)[0]
+        try:
+            target_pile = resolve_by_genesis(gen_prefix, genesis_by_pile)
+        except AmbiguousGenesis as e:
+            sys.stderr.write(f"REFUSED: {e}\n")
+            return 1
+        if target_pile is None:
+            sys.stderr.write(
+                f"REFUSED: no pile given on this command line carries a genesis "
+                f"beginning {gen_prefix!r}. A pile born before 2026-08-01 has none at "
+                f"all — `scribe stamp PILE` gives it one, and it is issued from that "
+                f"moment, not recovered.\n")
+            return 1
+        same_pile_label = os.path.basename(target_pile)
     else:
         matches = [p for p in pile_paths
                   if os.path.basename(p) == target_pile_name
@@ -3135,7 +3196,11 @@ def cmd_amend(args):
     if pointers:
         sys.stderr.write(
             f"REFUSED: #{target.id} is pointed at by {len(pointers)} block(s) in this pile:\n")
-        for fp, key, from_id, _ts in pointers:
+        # Five, not four: `compute_backlinks` gained value_as_written on
+        # 2026-08-11 so a report can show the pointer verbatim. This was the
+        # only other consumer, and it broke loudly — which is the argument for
+        # a tuple over a dict here staying honest work rather than free.
+        for fp, key, from_id, _ts, _val in pointers:
             where = "" if os.path.abspath(fp) == os.path.abspath(args.pile) \
                     else f"   [in {os.path.basename(fp)}]"
             sys.stderr.write(f"    #{from_id}  @{key}:#{target.id}{where}\n")

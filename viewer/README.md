@@ -1,14 +1,29 @@
 # The scribe shell — an optional full-screen front-end (Textual)
 
-> **STATUS: NOT READY. This is unfinished work, and it needs more before anyone should rely
-> on it for daily use.** Everything scribe does, it does from the command line beside your own
-> editor — that is the supported path, and the guide (`GUIDE-scribe-with-xed.md`) teaches it.
-> This shell is an experiment sitting on top of that, and it lags the tool: it has fallen
-> behind scribe's verb list at least three times (see `duplicates` below), and its own tests
-> check that the verbs it forwards *work*, not that it forwards *all* of them. Treat it as a
-> sketch to be finished, not a component to depend on. Nothing in it can hurt a pile — it
-> shells out to scribe and only `push` writes — but it may quietly not offer you something
-> scribe has.
+> **STATUS: usable, optional, and behind the command line — updated 2026-08-11.**
+>
+> It replaces a **NOT READY** banner that had become false. That banner said the shell was
+> "a sketch to be finished, not a component to depend on"; since it was written the shell has
+> been rebuilt around a single full-width tab bar, a stdin-reading verb can no longer freeze
+> it, a landed push re-derives its tab, a refused push is never reported as saved, `view` on
+> an open tab refreshes without overwriting unpushed edits, and text selection works. It was
+> tested in earnest for the first time on 2026-08-10 and the faults that pass found are
+> fixed. Leaving the old banner up would have been the same failure it warns about — a
+> statement that stopped being true and kept being read.
+>
+> **What is still honestly true, and it is the part worth keeping:**
+> * **This shell is optional and always will be.** Everything scribe does, it does from the
+>   command line beside your own editor — that is the supported path, and
+>   [`guide_proposed-workflow.md`](../guide_proposed-workflow.md) teaches it.
+> * **It lags the tool.** Seven verbs are not forwarded (`amend`, `duplicates`, `names`,
+>   `recall`, `seal`, `unseal`, `verify`), and its tests check that the verbs it forwards
+>   *work*, not that it forwards *all* of them. Run those from a terminal. The real repair is
+>   a completeness assertion against `scribe --help`; see the known gap below.
+> * **`capture` and `check` are refused here on purpose.** They read their body from standard
+>   input, which this shell cannot type into. It says so and points you at a terminal, rather
+>   than writing an empty-bodied block.
+> * **Nothing in it can hurt a pile.** It shells out to frozen scribe and never imports it;
+>   only `push` writes, and scribe applies every one of its own refusals whoever calls it.
 
 Commands in, derived views as throwaway tabs, edits home by `#id`.
 
