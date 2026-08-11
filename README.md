@@ -310,6 +310,55 @@ Full vocabulary and the working discipline: **[`tagging/`](tagging/)** — open
 `TAGS-bench-sheet.md` while you work, `TAG-KEYS-reference-v1-DRAFT.md` when you want to know
 why a key exists.
 
+## Mint and place — declaring a block anywhere in the file
+
+Everything above appends: a new saying arrived now, and now is after everything that arrived
+before, so the end of the file is where it honestly goes.
+
+**But declaring is not the same act as appending, and scribe has always let you separate
+them.** You need this the moment you have an ordinary document — notes written months ago, a
+transcript, a page of prose — and you want to turn a paragraph in the *middle* of it into a
+real block, leaving the rest where it is.
+
+**Leave off `--append` and `capture` writes nothing. It prints the finished block instead:**
+
+```sh
+scribe capture --source self --tag topic:nas --tag act:record-the-boot-order
+# ↳ @@ #4953 2026-08-11T11:15:44.954953 @topic:nas @act:record-the-boot-order @source:self
+```
+
+That is a complete, honest header: a real declaring moment, an issued handle, your tags.
+Nothing about it is provisional. Paste it into your editor immediately above the paragraph
+you mean to declare, save, and the block is real — it parses, it carries its identity, and it
+appears in every derived view it belongs to. The text never moved.
+
+```sh
+# 1. mint            (prints; writes nothing)
+scribe capture --source self --tag topic:nas
+# 2. place           (xed, or any editor — put the line above the paragraph you mean)
+# 3. check           (see below — this step is not optional)
+scribe duplicates pile.txt
+```
+
+**Why step 3.** A handle is checked unique *within a pile*. When you mint without `--append`,
+scribe has not been told which pile the block is going into, so it cannot make that check for
+you. Collisions are unlikely — the handle comes from the declaring moment, and two moments
+differ — but *unlikely* is not *checked*, and pasting a block that was minted for one pile
+into another is exactly how you would get one. `scribe duplicates` names any collision
+plainly; it never repairs one, because which of two blocks should move is yours to decide.
+
+**Why this is not a workaround.** The pile is a plain text file and hand-editing it is a
+sanctioned doorway, not a fallback (§3.1). What `--append` offers is convenience and the
+uniqueness check — not permission. The format has never had a rule about *where* a block may
+be declared, because position carries nothing (Charter §0.2: *belonging by presence, salience
+by reference*). For a while the guides only documented the appending half, which made the
+other half look like a limitation of the tool. It was a gap in the writing.
+
+**What you still cannot do:** ask scribe to carve an existing region out of surrounding text
+for you. You place the boundary yourself, in your editor, where you want it. That is the same
+answer the tool gives everywhere else — it will mint identity and tell you the truth about
+what it reads, and it will not decide where your thoughts begin.
+
 ## Verbs
 
 ```
@@ -318,6 +367,8 @@ scribe capture [--tag k:v]... [--topic T]... [--source S] [--name N] [--seal]
     Clean handed input into a block. Plain text is kept verbatim; --html recovers
     structure + LaTeX (from MathML) and strips fluff via pandoc, marking loss in-band.
     --tag writes ANY key: the vocabulary is the human's, not the tool's.
+    WITHOUT --append it does not write anywhere — it PRINTS the finished block, which
+    is the mint-and-place path below. With --append it writes to the end of PILE.
 
 scribe view key:value PILE [--recent] [--current]
     Gather every block carrying that tag, whole and un-moved. --current hides blocks a
@@ -332,6 +383,15 @@ scribe export key:value PILE [--bare] [--joiner S]
 scribe push VIEW PILE [--seal]    land a view's edits home by #id — appends a superseding
                                   block; never overwrites. The new block is not sealed
                                   unless you ask; either way push says which.
+                                  VIEW may be `-` to read the edited view from stdin.
+                                  EXITS: 0 it happened (all landed, or nothing differed)
+                                         1 nothing landed and nothing was written — a
+                                           stale view whose block was already superseded,
+                                           or a #id that is not in the pile
+                                         2 part landed, part was declined
+                                  A refusal means the tool declined, not that it broke —
+                                  the same sense in which `git push` rejects a stale ref.
+                                  Read the reasons it prints; they name what to regenerate.
 scribe amend '#id' PILE [--also PILE]   correct a body in place — no block, no mark
 scribe tag '#id' PILE --tag k:v [--remove k:v]   add or remove tags on a block
 scribe capture --name N …         say it again; the name follows you

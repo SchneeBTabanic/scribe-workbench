@@ -928,8 +928,25 @@ no package resolution — offline-rebuildable indefinitely by definition.
 | `edge/test_chatgpt_adapter.py` | edge tests (6) | `64723ebaefcf88fc654c7cf260d05bd5afb033085f5185032678a1ec5ef320e2` |
 | `edge/fixtures/chatgpt_sample.html` | edge test fixture | `18d86423900c9b58b5016c78d33c1d9ac972ffab6d06046b6ab9b4df959d218b` |
 
-Verify the running core at any time with `python3 scribe.py doctor` and compare its
-`scribe.py sha256:` line to the table above.
+**The table above is the v1.0 FREEZE RECORD, not a description of the file you are running.**
+It has been out of date by design since v1.1.0 — every release changes `scribe.py`, so its
+SHA changes with it. Read those digests as *what v1.0 was*, the way the version sections
+above this one read as what each release was.
+
+This paragraph used to say: *"Verify the running core at any time with `python3 scribe.py
+doctor` and compare its `scribe.py sha256:` line to the table above."* Corrected 2026-08-08.
+That instruction was true on the day it was written and false from the next release onward —
+following it on any later version yields a mismatch and invites the reader to conclude the
+artifact has been corrupted when nothing is wrong. **A live check pointed at a historical
+record is worse than no check: it manufactures alarm and teaches the reader to ignore
+digests.** (Same defect class as the doc drift recorded under v1.5.0 above — a claim that
+went stale because the thing it described moved on without it.)
+
+**What `doctor` is actually for**, then: it *discloses* the running artifact's digest so it can
+be recorded, quoted, or compared against a copy you obtained elsewhere. It has nothing in this
+file to check itself against, because **no released version after v1.0 records its SHA here.**
+Whether releases should carry one is unruled — it would have to be written after the final
+commit of each release, since any later edit invalidates it.
 
 ## Toolchain recorded (the freeze wall — §4.7)
 

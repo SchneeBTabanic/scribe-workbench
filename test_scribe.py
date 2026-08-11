@@ -1002,6 +1002,566 @@ class _Args:
         self.__dict__.update(kw)
 
 
+class TestTheMistypedIdSigil(unittest.TestCase):
+    """2026-08-08. A header whose `#` is missing was absorbed in TOTAL silence — no
+    announcement, no exit code, on read AND on write, because the write-side refusal calls
+    the same scan a read does. The source comment claimed the write side covered it; it
+    did not. Found by fat-fingering one into a demo pile while testing something else."""
+
+    MISTYPED = ("@@ #a1 2026-01-01T00:00 @topic:nas @source:s\nbody one\n\n"
+                "@@ b2 2026-01-01T00:01 @topic:nas @source:s\nbody two\n")
+
+    def test_a_header_missing_its_hash_is_now_caught(self):
+        bad = scribe.scan_malformed_headers(self.MISTYPED)
+        self.assertEqual([n for n, _ in bad], [4])
+        self.assertEqual(len(scribe.parse_pile(self.MISTYPED)), 1)   # the loss itself
+
+    def test_the_diff_hunk_protection_is_kept_not_traded_away(self):
+        """The first fix attempted was widening the rule to "starts with @@", which would
+        flag every pasted patch — exactly what the `#` requirement exists to prevent. The
+        shipped fix ADDS a case instead. Both properties must hold at once, so they are
+        asserted together: losing either one silently would look like a passing suite."""
+        self.assertEqual(scribe.scan_malformed_headers(
+            "@@ #a1 2026-01-01T00:00 @topic:patch @source:s\n"
+            "@@ -1,4 +1,4 @@\n-old\n+new\n"), [])
+        self.assertTrue(scribe.scan_malformed_headers(self.MISTYPED))
+
+    def test_git_hunk_context_echoing_a_pile_header_is_not_a_false_alarm(self):
+        """Diffing a pile makes git quote the nearest preceding header as hunk context, so
+        a legitimate hunk line CAN carry `@key:value` — the discriminator the new case
+        relies on. The leading `-`/`+` veto is what keeps it from firing."""
+        self.assertEqual(scribe.scan_malformed_headers(
+            "@@ #a1 2026-01-01T00:00 @topic:diff @source:s\n"
+            "@@ -10,7 +10,7 @@ @@ #a9 2026-01-01T00:00 @topic:nas @source:s\n"), [])
+
+    def test_a_good_header_is_never_flagged(self):
+        self.assertEqual(scribe.scan_malformed_headers(
+            "@@ #a1 2026-01-01T00:00 @topic:ok @source:s\nbody\n"), [])
+
+
+class TestPushGuardsTheViewNotOnlyThePile(unittest.TestCase):
+    """2026-08-08. `push` checked the pile and never the view — the one surface a human
+    hand-edits, and therefore the only place this defect can be introduced. The guard was
+    on the wrong side of the doorway."""
+
+    def _pile(self):
+        d = tempfile.mkdtemp(prefix="push-view-guard-")
+        path = os.path.join(d, "pile.txt")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("@@ #a001 2026-03-01T09:00:00 @topic:nas @source:schnee\n"
+                     "first block, untouched.\n\n"
+                     "@@ #a002 2026-03-02T09:00:00 @topic:nas @source:chatgpt\n"
+                     "second block, the one I mean to edit.\n")
+        return path
+
+    def test_a_bad_tag_value_in_the_view_refuses_and_writes_nothing(self):
+        """The full sequence this prevents, all of it silent and all of it exit 0: the
+        intended edit never landed, a DIFFERENT untouched block was superseded in its
+        place, and the malformed line was written into the pile — which then refused every
+        later write until repaired by hand."""
+        path = self._pile()
+        with open(path, encoding="utf-8") as fh:
+            before = fh.read()
+        view = ("# scribe: view topic:nas\n\n"
+                "@@ #a001 2026-03-01T09:00:00 @topic:nas @source:schnee\n"
+                "first block, untouched.\n\n"
+                "@@ #a002 2026-03-02T09:00:00 @topic:nas @source:chat gpt\n"
+                "SECOND BLOCK, EDITED IN XED.\n")
+        vpath = os.path.join(os.path.dirname(path), "view.txt")
+        with open(vpath, "w", encoding="utf-8") as fh:
+            fh.write(view)
+        import contextlib
+        import io
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as caught:
+            scribe.cmd_push(_Args(view=vpath, pile=path, seal=False))
+        with open(path, encoding="utf-8") as fh:
+            self.assertEqual(fh.read(), before, "the pile must not be touched")
+        msg = str(caught.exception)
+        self.assertIn("REFUSED", msg)
+        # The refusal must describe the act it refused. A view is never rewritten, so
+        # the pile's "a rewrite would make the loss permanent" would be plausible and
+        # wrong here — the harm is the edit landing on the wrong block.
+        self.assertIn("wrong block", msg)
+        self.assertNotIn("rewrite", msg)
+        self.assertIn("malformed-header", err.getvalue())
+
+    def test_a_clean_view_still_pushes(self):
+        """The guard must refuse the broken case without costing the working one."""
+        path = self._pile()
+        view = ("# scribe: view topic:nas\n\n"
+                "@@ #a002 2026-03-02T09:00:00 @topic:nas @source:chatgpt\n"
+                "SECOND BLOCK, EDITED CLEANLY.\n")
+        vpath = os.path.join(os.path.dirname(path), "view.txt")
+        with open(vpath, "w", encoding="utf-8") as fh:
+            fh.write(view)
+        import contextlib
+        import io
+        with contextlib.redirect_stderr(io.StringIO()):
+            rc = scribe.cmd_push(_Args(view=vpath, pile=path, seal=False))
+        self.assertEqual(rc, 0)
+        with open(path, encoding="utf-8") as fh:
+            self.assertIn("SECOND BLOCK, EDITED CLEANLY.", fh.read())
+
+
+class TestTheViewDisclosesInBand(unittest.TestCase):
+    """A view is routinely read where stderr cannot follow — `scribe view … | xed -` opens
+    it as an unsaved buffer and that pipe carries stdout alone. Anything a reader needs in
+    order to DISTRUST the view has to survive the pipe."""
+
+    def test_the_count_and_order_are_in_the_view_itself(self):
+        blocks = scribe.parse_pile(
+            "@@ #a1 2026-01-01T00:00 @topic:nas @source:s\none\n\n"
+            "@@ #a2 2026-01-01T00:01 @topic:nas @source:s\ntwo\n")
+        text, chosen = scribe.render_view(blocks, "topic", "nas")
+        self.assertIn("2 block(s)", text)
+        self.assertIn("arrival order", text)
+        text, _ = scribe.render_view(blocks, "topic", "nas", recent=True)
+        self.assertIn("most-recent first", text)
+
+    def test_a_swallowed_block_is_named_in_the_view_not_only_on_stderr(self):
+        """The count and the visible `@@ ` lines DISAGREE when this fires — scribe says
+        two, the eye counts three. That discrepancy is the evidence, and without this line
+        it is invisible to anyone reading the view in a buffer."""
+        pile = ("@@ #a1 2026-01-01T00:00 @topic:nas @source:s\none\n\n"
+                "@@ #a2 2026-01-01T00:01 @topic:nas @source:s\ntwo\n\n"
+                "@@ #a3 2026-01-01T00:02 @topic:nas @source:claude code\nthree\n")
+        blocks = scribe.parse_pile(pile)
+        text, _ = scribe.render_view(blocks, "topic", "nas",
+                                     malformed=scribe.scan_malformed_headers(pile),
+                                     where="p.txt")
+        self.assertIn("WARNING", text)
+        self.assertIn("SHORT by", text)
+        self.assertIn("p.txt", text)
+        self.assertIn("REFUSE", text)
+        self.assertEqual(text.count("@@ "), 3)      # three visible...
+        self.assertIn("2 block(s)", text)           # ...and scribe names two
+
+    def test_every_added_line_is_a_comment_so_push_still_strips_it(self):
+        """These lines live in a file whose whole purpose is being pushable. If one ever
+        failed to start with `#`, it would travel home as content."""
+        pile = ("@@ #a1 2026-01-01T00:00 @topic:nas @source:s\none\n\n"
+                "@@ #a2 2026-01-01T00:01 @topic:nas @source:bad value\ntwo\n")
+        blocks = scribe.parse_pile(pile)
+        text, _ = scribe.render_view(blocks, "topic", "nas",
+                                     malformed=scribe.scan_malformed_headers(pile),
+                                     where="p.txt")
+        head = text.split("\n\n")[0]
+        for line in head.splitlines():
+            self.assertTrue(line.startswith("#"), f"non-comment in the header: {line!r}")
+
+
+class TestPushHeadlineTellsRefusedFromUnchanged(unittest.TestCase):
+    """2026-08-08. The headline was a two-way choice on the superseded count alone, so a
+    push whose every edit was REFUSED announced itself as 'nothing changed (no body
+    differed)' — false, and the FIRST line a reader sees. It matters beyond wording:
+    anything reading this stream decides from the headline whether an edit landed, and
+    'nothing changed' and 'I refused to change anything' call for opposite responses.
+
+    Pinned HERE, in the main suite, rather than only in the viewer pilot — that pilot
+    needs the Textual venv, never runs alongside these, and had two assertions rot for six
+    days unnoticed because of it."""
+
+    def _pile(self):
+        d = tempfile.mkdtemp(prefix="push-headline-")
+        path = os.path.join(d, "p.txt")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("@@ #a001 2026-03-01T09:00:00 @topic:nas @source:schnee\n"
+                     "original body.\n")
+        return path
+
+    def _push(self, view, pile):
+        import contextlib
+        import io
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            scribe.cmd_push(_Args(view="-", pile=pile, seal=False))
+        return err.getvalue()
+
+    def _view_of(self, pile):
+        blocks = scribe.parse_pile(open(pile, encoding="utf-8").read())
+        text, _ = scribe.render_view(blocks, "topic", "nas")
+        return text
+
+    def test_a_fully_refused_push_does_not_claim_nothing_differed(self):
+        pile = self._pile()
+        stale = self._view_of(pile).replace("original body.", "FIRST.")
+        old = sys.stdin
+        try:
+            sys.stdin = io.StringIO(stale)
+            self._push(stale, pile)                      # lands, supersedes #a001
+            sys.stdin = io.StringIO(stale.replace("FIRST.", "SECOND."))
+            out = self._push(None, pile)                 # same stale #a001 — refused
+        finally:
+            sys.stdin = old
+        self.assertIn("NOTHING LANDED", out)
+        self.assertNotIn("no body differed", out)
+        self.assertIn("still only in the view", out)
+
+    def test_a_genuinely_unchanged_push_still_says_so(self):
+        """The new branch must not swallow the honest no-op it was carved out of."""
+        pile = self._pile()
+        old = sys.stdin
+        try:
+            sys.stdin = io.StringIO(self._view_of(pile))
+            out = self._push(None, pile)
+        finally:
+            sys.stdin = old
+        self.assertIn("nothing changed (no body differed)", out)
+        self.assertNotIn("NOTHING LANDED", out)
+
+
+class TestPushExitCodeAnswersDidItHappen(unittest.TestCase):
+    """RULED 2026-08-08 by Schnee. The exit code used to report WHERE scribe refused, not
+    what became of the edits: 1 for the pre-flight checks that abort before the loop
+    (ambiguous handle, malformed header) and 0 for every per-block refusal inside it — a
+    stale view, a missing #id, a mixed push. Nobody chose that; it fell out of the code
+    shape.
+
+    Now: 0 = it happened, 1 = nothing landed and nothing was written, 2 = part landed and
+    part was declined. The three values this file already uses, not new ones. Same shape as
+    `git push` rejecting a non-fast-forward and `grep` finding nothing — an exit code says
+    whether what you asked for happened, not whether the program malfunctioned.
+
+    All five cases are pinned together on purpose: the value of this ruling is the WHOLE
+    mapping being knowable, and any one of them drifting alone would restore the old
+    where-did-it-refuse semantics without looking like a regression."""
+
+    def _pile(self):
+        d = tempfile.mkdtemp(prefix="push-exit-")
+        path = os.path.join(d, "p.txt")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("@@ #a001 2026-03-01T09:00:00 @topic:nas @source:s\nbody one.\n\n"
+                     "@@ #a002 2026-03-02T09:00:00 @topic:nas @source:s\nbody two.\n")
+        return path
+
+    def _push(self, view_text, pile):
+        import contextlib
+        old = sys.stdin
+        try:
+            sys.stdin = io.StringIO(view_text)
+            with contextlib.redirect_stderr(io.StringIO()):
+                return scribe.cmd_push(_Args(view="-", pile=pile, seal=False))
+        finally:
+            sys.stdin = old
+
+    def _view(self, pile):
+        blocks = scribe.parse_pile(open(pile, encoding="utf-8").read())
+        text, _ = scribe.render_view(blocks, "topic", "nas")
+        return text
+
+    def test_everything_lands_is_zero(self):
+        pile = self._pile()
+        self.assertEqual(self._push(self._view(pile).replace("body one.", "LANDS."), pile), 0)
+
+    def test_an_honest_no_op_is_zero(self):
+        """Nothing differed, so nothing was asked for. Not a refusal."""
+        pile = self._pile()
+        self.assertEqual(self._push(self._view(pile), pile), 0)
+
+    def test_every_edit_refused_is_one(self):
+        """A stale view: the block was already superseded, so pushing would fork the
+        chain. Nothing is written — the same outcome as the ambiguity refusal, and now
+        the same exit code."""
+        pile = self._pile()
+        v = self._view(pile).replace("body one.", "FIRST.")
+        self._push(v, pile)
+        self.assertEqual(self._push(v.replace("FIRST.", "SECOND."), pile), 1)
+
+    def test_a_missing_id_is_one(self):
+        pile = self._pile()
+        self.assertEqual(self._push(
+            "@@ #zzzz 2026-03-01T09:00:00 @topic:nas @source:s\nghost.\n", pile), 1)
+
+    def test_partly_landed_is_findings(self):
+        """The case B would have left at 0, and the reason C was ruled: a caller must be
+        able to tell a clean push from one where half the edits were declined."""
+        pile = self._pile()
+        v = self._view(pile).replace("body one.", "FIRST.")
+        self._push(v, pile)
+        mixed = v.replace("FIRST.", "SECOND.").replace("body two.", "ALSO EDITED.")
+        self.assertEqual(self._push(mixed, pile), scribe.EXIT_FINDINGS)
+
+    def test_tag_drift_alone_does_not_change_the_code(self):
+        """Tag edits in a view are never applied, by contract. That is documented
+        behaviour, not a refusal of what you asked, so it must not colour the exit code —
+        otherwise ordinary pushes would start reporting findings."""
+        pile = self._pile()
+        v = self._view(pile).replace("body one.", "EDITED.").replace(
+            "@@ #a001 2026-03-01T09:00:00 @topic:nas @source:s",
+            "@@ #a001 2026-03-01T09:00:00 @topic:different @source:s")
+        self.assertEqual(self._push(v, pile), 0)
+
+
+class TestVerifyAnnouncesMalformedHeaders(unittest.TestCase):
+    """2026-08-09. `verify` read a pile, parsed it, and said nothing about headers that
+    failed to parse — alone among the pile-reading verbs. The bad case is specific: a
+    swallowed block is absorbed into the PREVIOUS block's body, so a SEALED neighbour is
+    correctly reported as 'changed since it was sealed' while the cause one line above goes
+    unmentioned. The reader gets the alarm without the diagnosis.
+
+    Found while orienting a prospective user: `check` and `verify` are the two words anyone
+    would reach for after hand-editing a pile, and they were the two verbs that reported it
+    clean."""
+
+    def _pile(self, sealed=False):
+        d = tempfile.mkdtemp(prefix="verify-malformed-")
+        path = os.path.join(d, "p.txt")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("@@ #a001 2026-03-01T09:00:00 @topic:nas @source:schnee\ngood block.\n\n"
+                     "@@ #a002 2026-03-02T09:00:00 @topic:nas @source:claude code\n"
+                     "a space in a tag value — this block is swallowed.\n")
+        return path
+
+    def _verify(self, path):
+        import contextlib
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            rc = scribe.cmd_verify(_Args(pile=[path]))
+        return rc, err.getvalue()
+
+    def test_it_names_the_broken_header(self):
+        rc, err = self._verify(self._pile())
+        self.assertIn("malformed-header", err)
+        self.assertIn("absorbed into the PREVIOUS", err)
+
+    def test_announcing_does_not_change_the_exit_rule(self):
+        """The exit code still means exactly and only 'a sealed block changed'. A malformed
+        header is a finding about the FILE; folding it in would make this verb's one
+        promise mean two things."""
+        rc, _ = self._verify(self._pile())
+        self.assertEqual(rc, 0, "no sealed block changed, so the exit must stay 0")
+
+    def test_a_clean_pile_says_nothing_about_headers(self):
+        d = tempfile.mkdtemp(prefix="verify-clean-")
+        path = os.path.join(d, "p.txt")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("@@ #a001 2026-03-01T09:00:00 @topic:nas @source:schnee\nfine.\n")
+        rc, err = self._verify(path)
+        self.assertNotIn("malformed-header", err)
+        self.assertEqual(rc, 0)
+
+
+class TestWordsAboveTheFirstBlockAreYours(unittest.TestCase):
+    """2026-08-11. The rule was described everywhere — in this file, in the guides — as
+    'push strips the leading `#` comment lines'. IT NEVER DID THAT. `push_view` keeps only
+    blocks carrying an id, and anything above the first `@@ ` has none, so it was dropped
+    whether or not it began with `#`. A human who typed a real sentence there lost it, and
+    the run reported `pushed home: nothing changed` — silent loss announced as success.
+
+    The fix is not a better position rule. It is a MARK: scribe now signs its own header
+    lines (VIEW_MARK), so it can tell its words from yours. Its own are dropped; yours stop
+    the push. This is the one place in the design where the discriminator had been a
+    convention both sides must remember rather than something living in the artifact."""
+
+    def _pile(self):
+        d = tempfile.mkdtemp(prefix="preamble-")
+        path = os.path.join(d, "p.txt")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("@@ #a001 2026-03-01T09:00:00 @topic:nas @source:s\noriginal body.\n")
+        return path
+
+    def _view(self, pile):
+        blocks = scribe.parse_pile(open(pile, encoding="utf-8").read())
+        text, _ = scribe.render_view(blocks, "topic", "nas")
+        return text
+
+    def _push(self, view_text, pile):
+        import contextlib
+        old = sys.stdin
+        err = io.StringIO()
+        try:
+            sys.stdin = io.StringIO(view_text)
+            with contextlib.redirect_stderr(err):
+                rc = scribe.cmd_push(_Args(view="-", pile=pile, seal=False))
+        finally:
+            sys.stdin = old
+        return rc, err.getvalue()
+
+    def test_every_header_line_declares_that_scribe_wrote_it(self):
+        """Not just the first. A single marked line followed by unmarked ones would put the
+        discriminator back into position, which is what this change removes."""
+        head = self._view(self._pile()).split("\n\n")[0]
+        self.assertTrue(head.splitlines())
+        for line in head.splitlines():
+            self.assertTrue(line.startswith(scribe.VIEW_MARK), f"unmarked header: {line!r}")
+
+    def test_a_sentence_of_your_own_stops_the_push(self):
+        pile = self._pile()
+        with open(pile, encoding="utf-8") as fh:
+            before = fh.read()
+        v = self._view(pile).split("\n")
+        v.insert(3, "TODO: check the NAS boot order before Friday.")
+        rc, err = self._push("\n".join(v), pile)
+        self.assertEqual(rc, 1)
+        self.assertIn("REFUSED", err)
+        self.assertIn("boot order", err, "the refusal must quote the line it found")
+        with open(pile, encoding="utf-8") as fh:
+            self.assertEqual(fh.read(), before, "nothing may be written")
+
+    def test_scribes_own_header_is_still_dropped(self):
+        """The mark must not turn scribe's own words into a refusal — that would make
+        every ordinary push fail."""
+        pile = self._pile()
+        v = self._view(pile).replace("original body.", "EDITED.")
+        rc, _ = self._push(v, pile)
+        self.assertEqual(rc, 0)
+        with open(pile, encoding="utf-8") as fh:
+            after = fh.read()
+        self.assertIn("EDITED.", after)
+        self.assertNotIn(scribe.VIEW_MARK, after, "the header must never enter the pile")
+
+    def test_blank_lines_belong_to_neither(self):
+        pile = self._pile()
+        v = self._view(pile).replace("original body.", "EDITED.")
+        rc, _ = self._push(v.replace("\n\n", "\n\n\n\n"), pile)
+        self.assertEqual(rc, 0, "whitespace is not a claim and must not refuse a push")
+
+    def test_preamble_of_splits_mine_from_theirs(self):
+        mine, theirs = scribe.preamble_of(
+            f"{scribe.VIEW_MARK} view topic:x — 1 block(s)\n"
+            "a human sentence\n"
+            "\n"
+            "@@ #a001 2026-03-01T09:00:00 @topic:x @source:s\nbody\n")
+        self.assertEqual(len(mine), 1)
+        self.assertEqual([n for n, _ in theirs], [2])
+
+    def test_it_stops_looking_at_the_first_block(self):
+        """A `#` line INSIDE a body is ordinary markdown and must not be mistaken for a
+        preamble claim — the collision that made the old positional rule tolerable."""
+        mine, theirs = scribe.preamble_of(
+            f"{scribe.VIEW_MARK} view topic:x — 1 block(s)\n"
+            "\n"
+            "@@ #a001 2026-03-01T09:00:00 @topic:x @source:s\n"
+            "## a markdown heading in the body\nmore text\n")
+        self.assertEqual(theirs, [], "body text is not preamble")
+
+
+class TestEveryDerivedVerbCanSayItsFiguresAreWrong(unittest.TestCase):
+    """2026-08-11, the doorway. A derived artifact is routinely read where stderr cannot
+    follow — `scribe toc PILE | xed -` opens it in an editor and that pipe carries stdout
+    alone.
+
+    MEASURED BEFORE BUILDING, and the brief that asked for this was wrong about three of
+    its four verbs. `toc` already declared its axis, its counts AND the keys it does not
+    show; `export` already carried a trailing manifest with a content fingerprint;
+    `backlinks` already named its target and count. Only `keys` had no in-band header at
+    all. So the fix was NOT to give four verbs the view's header — that would have
+    flattened four honest, verb-appropriate conventions into one. What none of them could
+    say is that its own figures are SHORT because the pile did not fully parse."""
+
+    MALFORMED = ("@@ #a001 2026-03-01T09:00:00 @topic:nas @source:s @ref:#a002\nfirst.\n\n"
+                 "@@ #a002 2026-03-02T09:00:00 @topic:nas @source:s\nsecond.\n\n"
+                 "@@ #a003 2026-03-03T09:00:00 @topic:backup @source:claude code\n"
+                 "swallowed by the space in its tag value.\n")
+
+    def _pile(self, text=None):
+        d = tempfile.mkdtemp(prefix="doorway-")
+        path = os.path.join(d, "p.txt")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text if text is not None else self.MALFORMED)
+        return path
+
+    def _stdout_only(self, fn, path, **kw):
+        """What survives the pipe — stdout with stderr thrown away, as `| xed -` gives."""
+        import contextlib
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            fn(_Args(pile=path, **kw))
+        return out.getvalue()
+
+    def test_toc_says_its_counts_are_short(self):
+        out = self._stdout_only(scribe.cmd_toc, self._pile(), by="topic")
+        self.assertIn("SHORT", out)
+        self.assertIn("did not parse", out)
+
+    def test_keys_gained_a_header_it_never_had(self):
+        """It opened straight onto `@source:  2 tag(s)…` with nothing saying which pile,
+        how many blocks, or that digests were excluded."""
+        out = self._stdout_only(scribe.cmd_keys, self._pile(), counts_only=False)
+        self.assertIn(scribe.VIEW_MARK, out)
+        self.assertIn("block(s)", out)
+        self.assertIn("SHORT", out)
+
+    def test_backlinks_says_it_when_a_relation_may_be_missing(self):
+        """The sharpest case: a swallowed block cannot point at anything, so a malformed
+        pile turns a real relation into 'nothing points at it'."""
+        path = self._pile()
+        out = self._stdout_only(scribe.cmd_backlinks, [path], target="#a002")
+        self.assertIn("SHORT", out)
+        self.assertIn("What points at", out)
+
+    def test_the_warning_comes_BEFORE_the_content_it_qualifies(self):
+        """A reader told the counts are short only after finishing them has already
+        believed them."""
+        out = self._stdout_only(scribe.cmd_toc, self._pile(), by="topic")
+        self.assertLess(out.index("SHORT"), out.index("Table of contents"))
+
+    def test_export_puts_it_where_export_already_discloses(self):
+        """Not a leading comment block: an export is paste-ready, and its disclosure
+        convention is the trailing manifest."""
+        out = self._stdout_only(scribe.cmd_export, self._pile(), selector="topic:nas",
+                                recent=False, bare=False, joiner=None)
+        self.assertIn("<!-- WARNING:", out)
+        self.assertIn("SHORT by that many block(s)", out)
+        self.assertLess(out.index("first."), out.index("<!-- WARNING:"))
+
+    def test_bare_export_of_a_malformed_pile_REFUSES(self):
+        """RULED 2026-08-11. It had been left as a declared §3.6 fallback — `--bare` omits
+        the manifest, the manifest is where export discloses. That was overturned for a
+        reason particular to what an export IS: every other short artifact stays in reach
+        (re-run the toc, regenerate the view, repair the pile), but AN EXPORT LEAVES. Once
+        pasted into another mind it is the only copy that reader will ever see, and nothing
+        downstream can discover it was short. It is the one incompleteness that cannot be
+        taken back — so the act is refused rather than performed silently."""
+        import contextlib
+        path = self._pile()
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = scribe.cmd_export(_Args(pile=path, selector="topic:nas", recent=False,
+                                         bare=True, joiner=None))
+        self.assertEqual(rc, 1)
+        self.assertEqual(out.getvalue(), "", "a refused export must emit nothing to paste")
+        self.assertIn("REFUSED", err.getvalue())
+        self.assertIn("An export leaves", err.getvalue())
+
+    def test_bare_export_of_a_CLEAN_pile_still_works(self):
+        """The refusal must cost nothing to the ordinary case — `--bare` is a legitimate
+        request and stays one."""
+        clean = "@@ #a001 2026-03-01T09:00:00 @topic:nas @source:s\nfine.\n"
+        out = self._stdout_only(scribe.cmd_export, self._pile(clean), selector="topic:nas",
+                                recent=False, bare=True, joiner=None)
+        self.assertIn("fine.", out)
+        self.assertNotIn("<!--", out, "--bare still means no manifest")
+
+    def test_a_clean_pile_says_nothing_anywhere(self):
+        """An alarm that always fires teaches the reader to stop reading (§3.7)."""
+        clean = "@@ #a001 2026-03-01T09:00:00 @topic:nas @source:s\nfine.\n"
+        for fn, kw in ((scribe.cmd_toc, {"by": "topic"}),
+                       (scribe.cmd_keys, {"counts_only": False})):
+            out = self._stdout_only(fn, self._pile(clean), **kw)
+            self.assertNotIn("SHORT", out)
+            self.assertNotIn("did not parse", out)
+
+
+class TestTheStampNamesTheHazard(unittest.TestCase):
+    """The stamp described the format and named no hazard — while the one edit that costs
+    you something is a header typo, and hand-editing is exactly what the stamp invites."""
+
+    def test_the_stamp_warns_about_hand_edited_headers(self):
+        self.assertIn("SPACE INSIDE A TAG VALUE", scribe.PILE_STAMP)
+        self.assertIn("absorbed into the PREVIOUS", scribe.PILE_STAMP)
+
+    def test_the_stamp_and_the_detector_agree_about_the_sigil(self):
+        """They disagreed until 2026-08-08: the stamp said a block begins at `@@ ` and the
+        detector required `@@ #`. A reader following the stamp would write a header the
+        parser drops."""
+        self.assertIn("`@@ #` in column 0", scribe.PILE_STAMP)
+
+    def test_the_stamp_is_still_not_itself_malformed(self):
+        self.assertEqual(scribe.scan_malformed_headers(scribe.PILE_STAMP), [])
+
+
 class TestChooseableToc(unittest.TestCase):
     """§3.13/§3.8 — the one ordering that could not be chosen, and could not say so."""
 
@@ -2101,6 +2661,15 @@ class TestIdentityKindGuards(unittest.TestCase):
         "BRIEF-scribe-identity-mint-and-handle.md":
             "quotes the historical `#<id>` at :181 while DESCRIBING the gap; it does not "
             "introduce a live field. It is also the document that carries the ruling.",
+        "guide_proposed-workflow.md":
+            "a workflow guide that deliberately uses example placeholders rather than live "
+            "ids — `ref# block #<id> another_pile.txt` at :45 is showing a reader the SHAPE "
+            "of a cross-pile pointer, and a real id there would be worse: it would send "
+            "anyone who copied the line at a block that exists, in a pile they do not have. "
+            "Whitelisted 2026-08-11 on the sovereign's ruling. (It reached this list by "
+            "being renamed from GUIDE-scribe-with-xed.md — the guard is keyed by filename, "
+            "so a rename drops a document out of every list that names it. That fragility "
+            "is the same one `git mv` exposed across six other files the same day.)",
     }
     PLACEHOLDER_RE = re.compile(r"[#<]<(id|uuid|guid|key|hash|handle)>")
     # Deliberately narrow: an explicit kind declaration, NOT the word "ruled". The historical

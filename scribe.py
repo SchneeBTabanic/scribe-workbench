@@ -46,7 +46,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 
-VERSION = "1.5.0"
+VERSION = "1.7.1"
 
 # The one external process the HTML path shells to. Recorded for provenance (§4.4); the
 # tool discloses the running pandoc via `scribe doctor` and hard-fails if it is absent.
@@ -91,9 +91,21 @@ RETIRED_KEYS = {"state": "aspect"}
 # A line that is an INTENDED header but did not parse. Deliberately narrower than
 # "starts with @@": a pasted unified-diff hunk (`@@ -1,4 +1,4 @@`) is legitimate body
 # text and must not be reported as a broken header, so the id sigil `#` is required.
-# NAMED LIMIT (§3.8): a header whose `#` itself is missing or mistyped is NOT caught
-# by this check — the write-side refusal below is what covers that case.
 INTENDED_HEADER_RE = re.compile(r"^@@ +#\S")
+
+# The `#` itself mistyped or missing (`@@ b003 2026-… @topic:nas`). Until 2026-08-08 this
+# was a NAMED LIMIT here claiming the write-side refusal covered it. It did not: that
+# refusal calls the same scan, so a header with no `#` was absorbed into its neighbour's
+# body in TOTAL silence — no announcement, no exit code, on read AND on write. Found by
+# fat-fingering one into a demo pile while testing something else.
+#
+# The fix keeps the `#` rule above and ADDS a case, rather than widening it. Widening to
+# "starts with @@" was tried first and is wrong: it flags every pasted diff hunk, which is
+# what the rule above exists to prevent. The discriminator is that a header carries at
+# least one `@key:value`, and a hunk header carries none — plus a leading `-`/`+` veto, so
+# that git's own `@@ -1,4 +1,4 @@ <context>` cannot false-alarm when the context line it
+# echoes is itself a pile header.
+MISTYPED_HEADER_RE = re.compile(r"^@@ +(?![-+])\S.* @[^\s:]+:[^\s]+")
 
 
 # ---------------------------------------------------------------------------
@@ -133,10 +145,44 @@ INTENDED_HEADER_RE = re.compile(r"^@@ +#\S")
 
 STAMP_MARK = "# This file is a scribe pile"
 
+# EVERY LINE SCRIBE WRITES INTO A DERIVED VIEW'S HEADER CARRIES THIS. Added 2026-08-11.
+#
+# What it replaces, and why that had to go. `push` kept only blocks with an id, so ANYTHING
+# above the first `@@ ` — having no id — was dropped. It was described in this file and in
+# the guides as "stripping the leading `#` comment lines", which was never what the code did:
+# the rule was POSITIONAL, not about `#` at all. A human who typed a real sentence above the
+# first block — a note to self, a question, a paragraph meant to become a block — lost it,
+# and `push` reported `pushed home: nothing changed`. Silent loss announced as success, which
+# is the one failure this project ranks above the rest.
+#
+# The mark makes the question answerable instead of positional: scribe can now tell ITS OWN
+# words from the human's, because its own carry a declaration and the human's do not. Lines
+# bearing the mark are scribe's and are dropped; anything else above the first `@@ ` is the
+# human's and push REFUSES rather than discarding it (§3.6 — refuse before writing, never
+# explain afterwards).
+#
+# `scribe:` echoes MALFORMED_PREFIX above deliberately: this project's grammar is
+# self-identifying markers, and one vocabulary for "scribe wrote this" beats two.
+VIEW_MARK = "# scribe:"
+
 PILE_STAMP = f"""{STAMP_MARK} — one canonical file, appended in arrival order.
-# Read it plainly: a block begins at a line starting `@@ ` in column 0, carrying
+# Read it plainly: a block begins at a line starting `@@ #` in column 0, carrying
 # `#<id> <timestamp> @key:value ...`, and runs until the next such line or the end
 # of the file. No tool is needed to read this file. A tool is needed to SEARCH it well.
+#
+# EDITING THIS FILE BY HAND IS EXPECTED AND ALLOWED — it is a plain text file and that is
+# the point. But a header line is the one place where a typo is not cosmetic. A header
+# that does not parse is not reported as a broken header: it is absorbed into the PREVIOUS
+# block's body, silently, and the two blocks become one. The commonest cause by far is a
+# SPACE INSIDE A TAG VALUE — write `@source:claude-code`, never `@source:claude code` —
+# followed by a missing or mistyped `#`. Both keep looking correct to the eye.
+#
+# What that costs you is derived views, not this file. Every `scribe view`, `toc`, `keys`
+# and `export` reads the pile through the same parser, so a swallowed block is missing
+# from all of them at once while each still looks complete. Scribe announces the damage
+# on read and prints it into the view's own header, and REFUSES to write the file back
+# until it is repaired. If a count ever looks short, or two blocks appear to have run
+# together, suspect a header line before you suspect the tool.
 #
 # TO SEARCH IT WELL (human or AI assistant):
 #   scribe keys   PILE                  the tag keys and values this pile carries
@@ -263,9 +309,15 @@ def scan_malformed_headers(text):
     `@@` was verified collision-free against the sovereign's real material at GATE 1
     (his separators are rows of '#'), so an `@@ #…` at column 0 is always an intended
     header — there is no legitimate absorbed case. Returns [(lineno, line)], 1-based.
+
+    TWO shapes are caught, and the second was added 2026-08-08. A header can fail to parse
+    with its `#` intact (a space inside a tag value, the usual cause) or with the `#` itself
+    missing. The second shape used to pass in silence; see MISTYPED_HEADER_RE for why it is
+    a separate pattern and not a loosening of the first.
     """
     return [(i, line) for i, line in enumerate(text.split("\n"), 1)
-            if INTENDED_HEADER_RE.match(line) and not HEADER_RE.match(line)]
+            if (INTENDED_HEADER_RE.match(line) or MISTYPED_HEADER_RE.match(line))
+            and not HEADER_RE.match(line)]
 
 
 @dataclass
@@ -1546,7 +1598,8 @@ def is_superseded(block):
     return any(k == SUPERSEDED_KEY for k, _ in block.tags)
 
 
-def render_view(blocks, key, value, recent=False, tag_form="repeated", current=False):
+def render_view(blocks, key, value, recent=False, tag_form="repeated", current=False,
+                malformed=(), where=""):
     """A working view: the matching blocks, each with its `@@ #id` header (the
     back-link), ready to read, edit, and `push` home. It IS a mini-pile.
 
@@ -1564,9 +1617,28 @@ def render_view(blocks, key, value, recent=False, tag_form="repeated", current=F
     n_superseded = sum(1 for b in chosen if is_superseded(b))
     if current:
         chosen = [b for b in chosen if not is_superseded(b)]
-    header = f"# view {key}:{value}" + ("  (most-recent first)" if recent else "")
+    # THE COUNT AND THE ORDER GO IN-BAND, not only to stderr. A view is routinely read
+    # somewhere stderr cannot follow — `scribe view … | xed -` opens it as an unsaved
+    # buffer, and that pipe carries stdout alone. Everything a reader needs in order to
+    # distrust the view has to survive the pipe, or it may as well not be said.
+    header = (f"# view {key}:{value} — {len(chosen)} block(s), "
+              f"{'most-recent first' if recent else 'arrival order'}")
     note = ("# derived view — disposable. Edit a body and `scribe push` it home by #id.\n"
             "# the pile is the truth; regenerate this any time.")
+    if malformed:
+        # The count above is arithmetically wrong whenever this fires, and the reader can
+        # SEE more `@@ ` lines than it names. Saying so here is the whole point: the
+        # discrepancy is the evidence, and without this line it is invisible in a buffer.
+        lines = ", ".join(str(n) for n, _ in malformed)
+        note += (f"\n# WARNING: {len(malformed)} header line(s) in "
+                 f"{where or 'the pile'} did not parse, so the count above is SHORT by "
+                 f"that many.\n"
+                 f"#   Each was absorbed into the PREVIOUS block's body and is showing "
+                 f"here as text.\n"
+                 f"#   Line(s) {lines} in the pile. Usual cause: a space inside a tag "
+                 f"value.\n"
+                 f"#   Fix the pile first — `scribe push` will REFUSE while this is "
+                 f"true.")
     if n_superseded and current:
         note += (f"\n# --current: {n_superseded} superseded block(s) HIDDEN from this view. "
                  f"They are still in the pile.")
@@ -1574,7 +1646,60 @@ def render_view(blocks, key, value, recent=False, tag_form="repeated", current=F
         note += (f"\n# {n_superseded} block(s) here carry @superseded: — a later block has "
                  f"replaced them. Shown, not hidden; use --current to drop them.")
     body = "\n\n".join(serialize_block(b, tag_form) for b in chosen)
-    return f"{header}\n{note}\n\n{body}\n", chosen
+    # EVERY header line now declares that scribe wrote it. Built by rewriting the leading
+    # `# ` of each line rather than by threading VIEW_MARK through a dozen f-strings above:
+    # one place to be wrong instead of a dozen, and a line that somehow lacks the mark then
+    # fails loudly at push (it would be treated as the human's) rather than silently.
+    head = "\n".join(VIEW_MARK + ln[1:] if ln.startswith("#") else VIEW_MARK + " " + ln
+                     for ln in f"{header}\n{note}".split("\n"))
+    return f"{head}\n\n{body}\n", chosen
+
+
+def inband_malformed(malformed, where=""):
+    """The malformed-header warning as marked comment lines, for any derived artifact
+    that leaves on stdout. Empty string when there is nothing to say.
+
+    WHY THIS IS THE ONE DISCLOSURE THAT HAD TO TRAVEL. Added 2026-08-11, after measuring
+    rather than assuming what each derived verb already carried in-band. The answer was:
+    more than the brief claimed. `toc` already declares its axis, its counts and the keys it
+    does NOT show; `export` already carries a trailing manifest with a content fingerprint;
+    `backlinks` names its target and its count. Each verb had grown its own honest
+    disclosure.
+
+    What NONE of them carried is the warning that the pile did not fully parse — the single
+    line that says *the numbers and contents you are now reading are SHORT*. It went to
+    stderr alone, so it died at the first pipe, which is exactly the reader who most needs
+    it: someone looking at the artifact in an editor with no terminal in view.
+
+    So the doorway fix is not "give four verbs the view's header". It is: whatever a verb
+    already discloses, it must also be able to say that its own figures are wrong."""
+    if not malformed:
+        return ""
+    lines = ", ".join(str(n) for n, _ in malformed)
+    return (f"{VIEW_MARK} WARNING: {len(malformed)} header line(s) in "
+            f"{where or 'the pile'} did not parse, so every count below is SHORT by "
+            f"that many.\n"
+            f"{VIEW_MARK}   Each was absorbed into the PREVIOUS block's body. "
+            f"Line(s) {lines} in the pile.\n"
+            f"{VIEW_MARK}   Usual cause: a space inside a tag value. "
+            f"`scribe blocks PILE` names them.\n")
+
+
+def preamble_of(view_text):
+    """The lines of a view ABOVE its first `@@ ` header, split into scribe's own and the
+    human's. Returns (mine, theirs) where `theirs` is [(lineno, line)], 1-based.
+
+    Blank lines belong to neither and are ignored. Everything else that does not carry
+    VIEW_MARK is the human's, and `push` must not discard it."""
+    mine, theirs = [], []
+    for n, line in enumerate(view_text.split("\n"), 1):
+        if HEADER_RE.match(line) or INTENDED_HEADER_RE.match(line):
+            break
+        if not line.strip():
+            continue
+        (mine if line.startswith(VIEW_MARK) else theirs).append(
+            line if line.startswith(VIEW_MARK) else (n, line))
+    return mine, theirs
 
 
 def render_toc(blocks, key="topic"):
@@ -1664,7 +1789,8 @@ def content_fingerprint(blocks):
     return h.hexdigest()[:8]
 
 
-def render_export(blocks, key, value, recent=False, bare=False, joiner=None):
+def render_export(blocks, key, value, recent=False, bare=False, joiner=None,
+                  malformed=(), where=""):
     """A clean export to paste into the next mind: bodies only, no `@@` headers to
     scroll-and-delete. Back-links survive as an unobtrusive trailing manifest unless
     --bare (§3.7: disclosed, not hidden; but out of the way for the paste target).
@@ -1686,6 +1812,15 @@ def render_export(blocks, key, value, recent=False, bare=False, joiner=None):
         fp = content_fingerprint(chosen)
         out += (f"\n\n<!-- scribe export of {key}:{value} — source blocks: "
                f"{manifest} — content:sha256:{fp} -->")
+        # THE WARNING GOES WHERE THIS VERB ALREADY DISCLOSES — with the manifest, in an
+        # HTML comment, so a paste-ready artifact stays paste-ready. An export of a
+        # malformed pile is SHORT, and short is the one thing you must not discover after
+        # pasting it into another mind.
+        if malformed:
+            out += (f"\n<!-- WARNING: {len(malformed)} header line(s) in "
+                    f"{where or 'the pile'} did not parse, so this export is SHORT by that "
+                    f"many block(s). Line(s) "
+                    f"{', '.join(str(n) for n, _ in malformed)}. -->")
     return out + "\n", chosen
 
 
@@ -1935,23 +2070,32 @@ def _announce_malformed(text, where):
     if bad:
         sys.stderr.write(
             f"  {len(bad)} malformed header line(s): any block count reported here is "
-            f"SHORT by that many. Usual cause: a space inside a tag value. "
-            f"Fix the line(s) above, then re-run.\n")
+            f"SHORT by that many. Two causes, in order of how often they bite: a SPACE "
+            f"INSIDE A TAG VALUE (`@source:claude code` — write `claude-code`), or a "
+            f"missing or mistyped `#` before the id. Fix the line(s) above, then "
+            f"re-run.\n")
     return len(bad)
 
 
-def _refuse_if_malformed(text, where):
+def _refuse_if_malformed(text, where, reason=None):
     """WRITE-BACK side: refuse to rewrite a pile whose headers do not all parse.
 
     `tag` and `push` serialize the whole pile back to disk. Doing that over an
     unparsed header would cement a swallowed block into its neighbour's body as
-    though it had always been there. Hard-fail instead (§3.6)."""
+    though it had always been there. Hard-fail instead (§3.6).
+
+    `reason` exists because this now guards TWO different acts, and one sentence cannot
+    be true of both. Refusing a pile is "a rewrite would make the loss permanent";
+    refusing a view is not about rewriting at all — nothing is written to a view ever —
+    it is that the edit you meant would land on the wrong block. Reusing the pile's
+    sentence for the view would be a message that reads plausibly and misdescribes what
+    just happened, which is worse than no message."""
     bad = scan_malformed_headers(text)
     if bad:
         _announce_malformed(text, where)
-        raise SystemExit(f"REFUSED: will not rewrite {where} while {len(bad)} header "
-                         f"line(s) do not parse — a rewrite would make the loss "
-                         f"permanent. Fix the line(s) above first.")
+        raise SystemExit(
+            f"REFUSED: {reason or f'will not rewrite {where} while these header line(s) do not parse — a rewrite would make the loss permanent'}. "
+            f"Fix the line(s) above first.")
 
 
 def _announce_retired_keys(blocks, where):
@@ -2197,6 +2341,14 @@ def cmd_keys(args):
     in a paragraph of the guide rather than in the tool."""
     text = _read_input(args.pile)
     blocks = parse_pile(text)
+    # `keys` was the only derived verb with NO in-band header at all — it opened straight
+    # onto `@source:  2 tag(s)…` with nothing saying which pile, how many blocks, or that
+    # anything had been left out. Measured 2026-08-11; `toc`, `export` and `backlinks` had
+    # each already grown their own. This gives it one, and the malformed warning with it.
+    sys.stdout.write(inband_malformed(scan_malformed_headers(text), args.pile))
+    n_blocks = sum(1 for b in blocks if b.id)
+    sys.stdout.write(f"{VIEW_MARK} keys of {args.pile} — {n_blocks} block(s). "
+                     f"Every key present, with its values and counts.\n")
     per_key = {}
     n_mint = 0
     for b in blocks:
@@ -2261,7 +2413,9 @@ def cmd_view(args):
     key, value = _selector(args.selector)
     recent = args.recent
     text, chosen = render_view(blocks, key, value, recent=recent,
-                               tag_form=args.tag_form, current=args.current)
+                               tag_form=args.tag_form, current=args.current,
+                               malformed=scan_malformed_headers(text_in),
+                               where=args.pile)
     sys.stdout.write(text)
     sys.stderr.write(f"{len(chosen)} block(s) in view {key}:{value} "
                      f"({_order_note(recent)}{', current only' if args.current else ''})\n")
@@ -2299,6 +2453,11 @@ def cmd_backlinks(args):
         target_pile, same_pile_label = matches[0], target_pile_name
 
     back = compute_backlinks(piles)
+    # A backlink report is a claim about what does and does not point at a block. A
+    # swallowed block cannot point at anything, so a malformed pile can turn a real
+    # relation into "nothing points at it" — the most misleading answer this verb gives.
+    for path in args.pile:
+        sys.stdout.write(inband_malformed(scan_malformed_headers(_read_input(path)), path))
     sys.stdout.write(render_backlinks(target_pile, target_id, back, same_pile_label))
     return EXIT_FINDINGS if bad_total else 0
 
@@ -2322,11 +2481,27 @@ def cmd_verify(args):
 
     That second one is §3.7-as-amended turned on this verb itself: an alarm that always fires
     defeats disclosure while satisfying it, and teaches the reader to stop reading exit codes.
-    The condition is REPORTED IN FULL below; it simply does not colour the exit."""
+    The condition is REPORTED IN FULL below; it simply does not colour the exit.
+
+    IT ALSO ANNOUNCES MALFORMED HEADERS, added 2026-08-09. It read a pile and parsed it while
+    saying nothing about headers that failed to parse — alone among the pile-reading verbs,
+    and inconsistent with `cmd_activate` immediately below it. The consequence was specific
+    and bad: a block whose header stops parsing is absorbed into the PREVIOUS block's body,
+    so if that neighbour is SEALED this verb correctly reports it as *changed since it was
+    sealed* — alarming, true, and with no hint that a header one line up is the cause. The
+    reader is handed the alarm and not the diagnosis. A verb whose whole job is answering
+    "does this pile still say what it said" must not be the one that stays quiet about a
+    block having silently merged into its neighbour.
+
+    Announcing does not change this verb's exit rule. Malformed headers are a finding about
+    the FILE, not about a seal, and `_announce_malformed`'s own return is deliberately not
+    folded into `undetermined` — the exit code still means exactly and only "a sealed block
+    changed"."""
     undetermined = 0
     for path in args.pile:
         with open(path, "r", encoding="utf-8") as fh:
             text = fh.read()
+        _announce_malformed(text, path)
         genesis, declared = genesis_of(text, path)
         rep = audit_seals(parse_pile(text), genesis)
         blocks, states = rep["blocks"], rep["states"]
@@ -2524,6 +2699,9 @@ def cmd_converges(args):
 def cmd_toc(args):
     text_in = _read_input(args.pile)
     blocks = parse_pile(text_in)
+    # BEFORE the contents, not after: a reader who is told the counts are short only once
+    # they have finished reading them has already believed them.
+    sys.stdout.write(inband_malformed(scan_malformed_headers(text_in), args.pile))
     sys.stdout.write(render_toc(blocks, key=args.by) + "\n")
     bad = _announce_malformed(text_in, args.pile)
     _announce_retired_keys(blocks, args.pile)
@@ -2536,7 +2714,40 @@ def cmd_export(args):
     key, value = _selector(args.selector)
     recent = args.recent
     joiner = args.joiner.replace("\\n", "\n") if args.joiner is not None else None
-    text, chosen = render_export(blocks, key, value, recent=recent, bare=args.bare, joiner=joiner)
+
+    # `--bare` ON A MALFORMED PILE REFUSES — RULED 2026-08-11 by Schnee.
+    #
+    # It had been left as a DECLARED fallback: `--bare` means omit the manifest, the
+    # manifest is where this verb discloses, and §3.6 permits a fallback when it is
+    # declared. That reasoning was sound and still lost, for a reason particular to what
+    # an export IS.
+    #
+    # Every other short artifact stays inside reach. A short `toc` is re-run; a short
+    # `view` is regenerated; a short pile is repaired and everything derived from it comes
+    # back right. **An export LEAVES.** It is pasted into another mind, another chat,
+    # another file — and at that moment it stops being derivable-again and becomes the only
+    # copy that reader will ever see. Nothing downstream can discover that it was short.
+    # A silent, clean, incomplete export is therefore not a smaller failure than a noisy
+    # one; it is the only one of these that cannot be taken back.
+    #
+    # So the two channels the caller asked to close are closed and the act is refused
+    # instead. `--bare` remains honest: it means "no manifest", not "no warning" — and it
+    # was never a request to be lied to.
+    bad_lines = scan_malformed_headers(text_in)
+    if bad_lines and args.bare:
+        _announce_malformed(text_in, args.pile)
+        sys.stderr.write(
+            f"REFUSED: nothing exported. {len(bad_lines)} header line(s) in {args.pile} do "
+            f"not parse, so this export would be SHORT by that many block(s) — and "
+            f"`--bare` omits the manifest that would have said so.\n"
+            f"  An export leaves: once pasted, nothing downstream can find out it was "
+            f"incomplete.\n"
+            f"  Fix the line(s) above, or drop `--bare` and the warning travels with the "
+            f"export.\n")
+        return 1
+    text, chosen = render_export(blocks, key, value, recent=recent, bare=args.bare,
+                                 joiner=joiner, malformed=scan_malformed_headers(text_in),
+                                 where=args.pile)
     sys.stdout.write(text)
     sys.stderr.write(f"exported {len(chosen)} block(s) of {key}:{value} "
                      f"({_order_note(recent)})\n")
@@ -2562,6 +2773,53 @@ def cmd_verify_export(args):
 
 def cmd_push(args):
     view_text = _read_input(args.view)
+    # THE VIEW IS CHECKED FIRST, AND BEFORE THE PILE, because the view is the surface a
+    # human just hand-edited and therefore the only place this defect can be introduced.
+    # Until 2026-08-08 only the pile was checked, and the consequence was demonstrated end
+    # to end: put a space in one tag value while editing a view, push, and scribe reported
+    # SUCCESS with exit 0 while (a) the edit you meant never landed, (b) a different,
+    # untouched block was superseded in its place — because the unparsed header had been
+    # absorbed into ITS body — and (c) the malformed line was written into the pile, which
+    # then refused every later write until it was repaired by hand. Guarding the canonical
+    # artifact while leaving the editing surface open was guarding the wrong side of the
+    # doorway (§3.6: refuse before writing, never explain afterwards).
+    _refuse_if_malformed(
+        view_text, "the view" if args.view == "-" else args.view,
+        reason="nothing was written to the pile. A header line in the view you are "
+               "pushing does not parse, so the block under it was read as part of the "
+               "PREVIOUS block's body — pushing now would land your edit on the wrong "
+               "block and leave the one you meant untouched")
+
+    # WORDS ABOVE THE FIRST BLOCK ARE YOURS, AND PUSH HAS NO PLACE TO PUT THEM.
+    #
+    # They used to vanish. `push_view` keeps only blocks carrying an id, and text above the
+    # first `@@ ` has none — so a sentence typed there was dropped and the run reported
+    # `pushed home: nothing changed`. Since 2026-08-11 scribe marks its own header lines
+    # (VIEW_MARK), so it can tell them from yours; yours now stop the push instead.
+    #
+    # REFUSING RATHER THAN GUESSING. Three placements suggest themselves — prepend to the
+    # first block, capture as a new block, append to the pile — and scribe cannot know which
+    # was meant. A note to yourself, a half-formed paragraph and a heading you were about to
+    # promote all look identical here. §3.3: the tool does not pick; it says what it found
+    # and leaves the act to you.
+    _, theirs = preamble_of(view_text)
+    if theirs:
+        where = "the view" if args.view == "-" else args.view
+        sys.stderr.write(
+            f"REFUSED: nothing was written to {args.pile}. {len(theirs)} line(s) above the "
+            f"first block in {where} are not scribe's own header, so they are yours — and "
+            f"push has nowhere to put them:\n")
+        for n, line in theirs:
+            sys.stderr.write(f"    line {n}: {line.strip()[:72]}\n")
+        sys.stderr.write(
+            "  Until 2026-08-11 these were discarded in silence and the push reported "
+            "success.\n"
+            "  Move them into a block's body, or `scribe capture` them as a block of their "
+            "own,\n"
+            "  or delete them — then push again. (An old view derived before this change "
+            "has an\n"
+            "  unmarked header: regenerate it with `scribe view` and re-apply your edits.)\n")
+        return 1
     with open(args.pile, "r", encoding="utf-8") as fh:
         pile_text = fh.read()
     _refuse_if_malformed(pile_text, args.pile)
@@ -2598,9 +2856,25 @@ def cmd_push(args):
     if report["superseded"]:
         _atomic_write(args.pile, serialize_pile(pile_blocks))
     n = len(report["superseded"])
-    sys.stderr.write(
-        f"pushed home: {n} block(s) superseded — nothing was overwritten\n"
-        if n else "pushed home: nothing changed (no body differed)\n")
+    # THE HEADLINE MUST NOT SAY "no body differed" WHEN ONE DID. Until 2026-08-08 this was
+    # a two-way choice on `n` alone, so a push whose every edit was REFUSED — stale view,
+    # missing id — announced itself as "nothing changed (no body differed)". That is the
+    # defect class this file has been clearing all day: a sentence that reads plausibly,
+    # is false, and is the FIRST line a reader sees. The refusals were already printed
+    # below it, so the disclosure was never missing; the headline contradicted it.
+    #
+    # It matters beyond wording. Anything reading this stream — the Textual viewer does —
+    # decides from the headline whether an edit landed, and "nothing changed" and "I
+    # refused to change anything" call for opposite responses from the human.
+    refused = len(report["already_superseded"]) + len(report["missing"])
+    if n:
+        sys.stderr.write(f"pushed home: {n} block(s) superseded — nothing was overwritten\n")
+    elif refused:
+        sys.stderr.write(
+            f"pushed home: NOTHING LANDED — {refused} edited block(s) were refused, and "
+            f"your edits are still only in the view. Reasons below.\n")
+    else:
+        sys.stderr.write("pushed home: nothing changed (no body differed)\n")
     for old, new in report["superseded"]:
         sys.stderr.write(f"  #{old} -> #{new}   (#{old} keeps its body and its identity, and "
                          f"gains one tag: @superseded:#{new})\n")
@@ -2635,6 +2909,31 @@ def cmd_push(args):
         sys.stderr.write(f"  NOTE: header tags differ for {', '.join('#'+i for i in report['tag_drift'])}"
                          " — NOT applied (use `tag` or edit the pile); the superseding block "
                          "inherits the OLD block's tags\n")
+    # THE EXIT CODE ANSWERS "DID WHAT YOU ASKED HAPPEN" — RULED 2026-08-08 by Schnee.
+    #
+    # It used to answer neither that nor anything else deliberate. `push` returned 1 for an
+    # ambiguous handle and for a malformed header, and 0 for every other refusal — a stale
+    # view, a `#id` that is not in the pile, a mixed push where half the edits were
+    # declined. What separated them was not whether scribe refused but WHERE it refused:
+    # the 1s are pre-flight checks that abort before the loop, the 0s are per-block
+    # refusals inside it. The code reported which branch fired, not what became of the
+    # edits — an artifact nobody chose.
+    #
+    # The objection considered and rejected: "a refused push is scribe working correctly,
+    # not failing." True, and it proves too much — it would make `git push`'s
+    # non-fast-forward rejection a bug and `grep`'s empty result a bug. An exit code
+    # answers whether the thing you asked for happened, not whether the program
+    # malfunctioned. scribe's stale-view refusal is the same shape as git's: your view is
+    # behind, so the push is declined and you are told what to regenerate.
+    #
+    # The three values are the ones this file already uses everywhere else, not new ones.
+    # `tag_drift` is deliberately NOT counted: tag edits in a view are never applied, by
+    # contract, so it is documented behaviour rather than a refusal of what you asked.
+    refused_now = len(report["already_superseded"]) + len(report["missing"])
+    if refused_now and not n:
+        return 1                    # nothing written — same as the ambiguity refusal
+    if refused_now:
+        return EXIT_FINDINGS        # part landed, part declined: ran, with findings
     return 0
 
 

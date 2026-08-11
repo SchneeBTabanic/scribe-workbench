@@ -112,14 +112,21 @@ def test_an_edit_lands_and_view_comments_never_leak_into_the_pile():
         fh.write(pile)
 
     view, _ = _run(["view", "topic:md", path])
-    assert view.startswith("# view topic:md"), "the view's own comment header moved"
+    # Since 2026-08-11 every header line carries VIEW_MARK, so scribe can tell its own
+    # words from the human's above the first block. The old test asserted a bare
+    # `# view topic:md`, which a human could type by hand and which push therefore could
+    # not distinguish from a note-to-self — the ambiguity the mark removes.
+    assert view.startswith("# scribe: view topic:md"), "the view's own comment header moved"
+    assert all(ln.startswith("# scribe:") for ln in view.split("\n\n")[0].split("\n")), \
+        "EVERY header line must declare that scribe wrote it, not just the first"
     edited = view.replace("## original heading", "## edited heading")
     _run(["push", "-", path], stdin=edited)
 
     with open(path, encoding="utf-8") as fh:
         after = fh.read()
     assert "## edited heading" in after, "the edit must land"
-    assert "# view topic:md" not in after, "view comments must never enter the pile"
+    assert "# scribe:" not in after, "view comments must never enter the pile"
+    assert "view topic:md" not in after
     assert "# derived view" not in after
 
 
